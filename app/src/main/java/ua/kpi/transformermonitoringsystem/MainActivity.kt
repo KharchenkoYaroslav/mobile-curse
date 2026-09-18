@@ -6,6 +6,8 @@ import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.Warning
 import ua.kpi.transformermonitoringsystem.data.Calculator
 import ua.kpi.transformermonitoringsystem.data.ModeOption
+import ua.kpi.transformermonitoringsystem.forms.LoginForm
+import ua.kpi.transformermonitoringsystem.forms.RegistrationForm
 import java.util.Locale
 import kotlin.random.Random
 import android.os.Bundle
@@ -13,8 +15,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,7 +47,7 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class PracticalWork {
-    PR1, PR2, PR3
+    PR1, PR2, PR3, PR4
 }
 
 @Composable
@@ -68,9 +72,10 @@ fun MainApp() {
                     )
                 ) {
                     val title = when (work) {
-                        PracticalWork.PR1 -> "Пр 1 (Основи)"
-                        PracticalWork.PR2 -> "Пр 2 (Логіка)"
-                        PracticalWork.PR3 -> "Пр 3 (UI)"
+                        PracticalWork.PR1 -> "Пр 1"
+                        PracticalWork.PR2 -> "Пр 2"
+                        PracticalWork.PR3 -> "Пр 3"
+                        PracticalWork.PR4 -> "Пр 4"
                     }
                     Text(title)
                 }
@@ -83,6 +88,7 @@ fun MainApp() {
             PracticalWork.PR1 -> Practical1Screen()
             PracticalWork.PR2 -> Practical2Screen()
             PracticalWork.PR3 -> Practical3Screen()
+            PracticalWork.PR4 -> Practical4Screen()
         }
     }
 }
@@ -281,6 +287,64 @@ fun Practical3Screen() {
                     fontWeight = if (warnings != "Немає") FontWeight.Bold else FontWeight.Normal
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun Practical4Screen() {
+    var isRegisterMode by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .imePadding()
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Top
+    ) {
+        Spacer(modifier = Modifier.height(24.dp))
+
+        if (isRegisterMode) {
+            RegistrationForm(
+                onRegister = { name, email, password, confirmPassword ->
+                    isLoading = true
+                    val resultMessage = when {
+                        name.isBlank() || email.isBlank() || password.isBlank() || confirmPassword.isBlank() ->
+                            "Будь ласка, заповніть усі поля!"
+                        password != confirmPassword ->
+                            "Паролі не співпадають!"
+                        !email.contains("@") ->
+                            "Введіть коректний Email!"
+                        else ->
+                            "Реєстрація успішна! Вітаємо, $name"
+                    }
+                    isLoading = false
+                    resultMessage
+                },
+                onSwitchToLogin = { isRegisterMode = false }
+            )
+        } else {
+            LoginForm(
+                onLogin = { login, password ->
+                    isLoading = true
+                    val resultMessage = if (login.isBlank() || password.isBlank()) {
+                        "Будь ласка, заповніть усі поля!"
+                    } else {
+                        "Авторизація успішна! Ласкаво просимо."
+                    }
+                    isLoading = false
+                    resultMessage
+                },
+                onSwitchToRegister = { isRegisterMode = true }
+            )
+        }
+
+        if (isLoading) {
+            Spacer(modifier = Modifier.height(16.dp))
+            CircularProgressIndicator()
         }
     }
 }
