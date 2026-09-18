@@ -5,6 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.Warning
 import ua.kpi.transformermonitoringsystem.data.Calculator
+import ua.kpi.transformermonitoringsystem.data.ModeOption
 import java.util.Locale
 import kotlin.random.Random
 import android.os.Bundle
@@ -196,15 +197,6 @@ fun Practical2Screen() {
         )
     }
 }
-
-data class ModeOption(
-    val title: String,
-    val modeName: String,
-    val temp: Int,
-    val oil: String,
-    val warning: String,
-    val isDanger: Boolean = false
-)
 
 @Composable
 fun Practical3Screen() {
