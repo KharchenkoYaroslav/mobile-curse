@@ -1,350 +1,71 @@
 package ua.kpi.transformermonitoringsystem
 
-import androidx.compose.animation.core.animateIntAsState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ElectricBolt
-import androidx.compose.material.icons.filled.Warning
-import ua.kpi.transformermonitoringsystem.data.Calculator
-import ua.kpi.transformermonitoringsystem.data.ModeOption
-import ua.kpi.transformermonitoringsystem.forms.LoginForm
-import ua.kpi.transformermonitoringsystem.forms.RegistrationForm
-import java.util.Locale
-import kotlin.random.Random
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.activity.viewModels
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import androidx.room.Room
+import ua.kpi.transformermonitoringsystem.data.local.AppDatabase
+import ua.kpi.transformermonitoringsystem.ui.navigation.NavScreen
+import ua.kpi.transformermonitoringsystem.data.TransformerRepository
+import ua.kpi.transformermonitoringsystem.ui.screens.MainMenuScreen
+import ua.kpi.transformermonitoringsystem.ui.screens.TransformerDetailsScreen
+import ua.kpi.transformermonitoringsystem.ui.screens.TransformerFormScreen
+import ua.kpi.transformermonitoringsystem.ui.screens.TransformerListScreen
+import ua.kpi.transformermonitoringsystem.ui.theme.TransformerMonitoringSystemTheme
+import ua.kpi.transformermonitoringsystem.ui.TransformerViewModel
+import ua.kpi.transformermonitoringsystem.ui.TransformerViewModelFactory
 
 class MainActivity : ComponentActivity() {
+
+    private val db by lazy {
+        Room.databaseBuilder(
+            applicationContext,
+            AppDatabase::class.java, "transformer-db"
+        ).build()
+    }
+
+    private val repository by lazy {
+        TransformerRepository(db.transformerDao())
+    }
+
+    private val viewModel: TransformerViewModel by viewModels {
+        TransformerViewModelFactory(repository)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    MainApp()
+            TransformerMonitoringSystemTheme {
+                Surface(color = MaterialTheme.colorScheme.background) {
+                    val navController = rememberNavController()
+                    NavHost(navController = navController, startDestination = NavScreen.MainMenu.route) {
+                        composable(NavScreen.MainMenu.route) {
+                            MainMenuScreen(navController)
+                        }
+                        composable(NavScreen.List.route) {
+                            TransformerListScreen(navController, viewModel)
+                        }
+                        composable(NavScreen.Form.route) {
+                            TransformerFormScreen(navController, viewModel)
+                        }
+                        composable(
+                            route = NavScreen.Details.route,
+                            arguments = listOf(navArgument("transformerId") { type = NavType.IntType })
+                        ) { backStackEntry ->
+                            val id = backStackEntry.arguments?.getInt("transformerId") ?: 0
+                            TransformerDetailsScreen(id, navController, viewModel)
+                        }
+                    }
                 }
             }
-        }
-    }
-}
-
-enum class PracticalWork {
-    PR1, PR2, PR3, PR4
-}
-
-@Composable
-fun MainApp() {
-    var selectedPractical by remember { mutableStateOf(PracticalWork.PR1) }
-
-    Column(modifier = Modifier.fillMaxSize()) {
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .statusBarsPadding()
-                .padding(10.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            PracticalWork.entries.forEach { work ->
-                Button(
-                    onClick = { selectedPractical = work },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (selectedPractical == work) MaterialTheme.colorScheme.primary else Color.Gray
-                    )
-                ) {
-                    val title = when (work) {
-                        PracticalWork.PR1 -> "Пр 1"
-                        PracticalWork.PR2 -> "Пр 2"
-                        PracticalWork.PR3 -> "Пр 3"
-                        PracticalWork.PR4 -> "Пр 4"
-                    }
-                    Text(title)
-                }
-            }
-        }
-
-        HorizontalDivider()
-
-        when (selectedPractical) {
-            PracticalWork.PR1 -> Practical1Screen()
-            PracticalWork.PR2 -> Practical2Screen()
-            PracticalWork.PR3 -> Practical3Screen()
-            PracticalWork.PR4 -> Practical4Screen()
-        }
-    }
-}
-
-@Composable
-fun Practical1Screen() {
-    var voltageForecast by remember { mutableIntStateOf(0) }
-
-    val animatedVoltage by animateIntAsState(
-        targetValue = voltageForecast,
-    )
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = "Система моніторингу трансформаторів",
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(
-            text = "Прогноз напруги: $animatedVoltage кВ",
-            fontSize = 22.sp,
-            color = MaterialTheme.colorScheme.onBackground,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Button(
-            onClick = {
-                voltageForecast = Random.nextInt(100, 121) 
-            }
-        ) {
-            Text("Оновити прогноз напруги")
-        }
-    }
-}
-
-@Composable
-fun Practical2Screen() {
-    var voltageInput by remember { mutableStateOf("") }
-    var currentInput by remember { mutableStateOf("") }
-    var cosPhiInput by remember { mutableStateOf("") }
-
-    var powerResult by remember { mutableDoubleStateOf(0.0) }
-
-    val calculator = remember { Calculator() }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            text = "Просунутий рівень: масштабування проєкту",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center
-        )
-
-        OutlinedTextField(
-            value = voltageInput,
-            onValueChange = { voltageInput = it },
-            label = { Text("Напруга (кВ)") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        OutlinedTextField(
-            value = currentInput,
-            onValueChange = { currentInput = it },
-            label = { Text("Струм (А)") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        OutlinedTextField(
-            value = cosPhiInput,
-            onValueChange = { cosPhiInput = it },
-            label = { Text("Коефіцієнт потужності (cos φ, напр. 0.85)") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Button(
-            onClick = {
-                powerResult = calculator.calculatePowerAdvanced(voltageInput, currentInput, cosPhiInput)
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Розрахувати активну потужність")
-        }
-
-        Text(
-            text = "Розрахована активна потужність: ${String.format(Locale.US, "%.2f", powerResult)} кВт",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center
-        )
-    }
-}
-
-@Composable
-fun Practical3Screen() {
-    var mode by remember { mutableStateOf("Холостий хід") }
-    var temperature by remember { mutableIntStateOf(45) }
-    var oilLevel by remember { mutableStateOf("Норма") }
-    var warnings by remember { mutableStateOf("Немає") }
-
-    val modeOptions = remember {
-        listOf(
-            ModeOption("Хол. хід", "Холостий хід", 45, "Норма", "Немає"),
-            ModeOption("Номінал", "Номінальне навантаження", 75, "Норма", "Немає"),
-            ModeOption("Перевант.", "Перевантаження", 105, "Низький", "УВАГА! Перегрів!", isDanger = true)
-        )
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = "Детальний моніторинг",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            modeOptions.forEach { option ->
-                Button(
-                    onClick = { 
-                        mode = option.modeName
-                        temperature = option.temp
-                        oilLevel = option.oil
-                        warnings = option.warning
-                    }, 
-                    colors = if (option.isDanger) {
-                        ButtonDefaults.buttonColors(containerColor = Color.Red)
-                    } else {
-                        ButtonDefaults.buttonColors()
-                    },
-                    modifier = Modifier.weight(1f).padding(2.dp)
-                ) {
-                    Text(option.title, fontSize = 12.sp)
-                }
-            }
-        }
-
-        Icon(
-            imageVector = if (temperature > 100) Icons.Filled.Warning else Icons.Filled.ElectricBolt,
-            contentDescription = "Статус трансформатора",
-            modifier = Modifier
-                .padding(vertical = 32.dp)
-                .size(100.dp),
-            tint = if (temperature > 100) Color.Red else Color(0xFFFBC02D)
-        )
-
-        Card(
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD))
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Режим роботи: $mode", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text("Температура оливи: $temperature °C", fontSize = 16.sp)
-                Text("Рівень оливи: $oilLevel", fontSize = 16.sp)
-                
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Попередження: $warnings", 
-                    fontSize = 16.sp, 
-                    color = if (warnings != "Немає") Color.Red else Color.Black,
-                    fontWeight = if (warnings != "Немає") FontWeight.Bold else FontWeight.Normal
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun Practical4Screen() {
-    var isRegisterMode by remember { mutableStateOf(false) }
-    var isLoading by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .imePadding()
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Top
-    ) {
-        Spacer(modifier = Modifier.height(24.dp))
-
-        if (isRegisterMode) {
-            RegistrationForm(
-                onRegister = { name, email, password, confirmPassword ->
-                    isLoading = true
-                    val resultMessage = when {
-                        name.isBlank() || email.isBlank() || password.isBlank() || confirmPassword.isBlank() ->
-                            "Будь ласка, заповніть усі поля!"
-                        password != confirmPassword ->
-                            "Паролі не співпадають!"
-                        !email.contains("@") ->
-                            "Введіть коректний Email!"
-                        else ->
-                            "Реєстрація успішна! Вітаємо, $name"
-                    }
-                    isLoading = false
-                    resultMessage
-                },
-                onSwitchToLogin = { isRegisterMode = false }
-            )
-        } else {
-            LoginForm(
-                onLogin = { login, password ->
-                    isLoading = true
-                    val resultMessage = if (login.isBlank() || password.isBlank()) {
-                        "Будь ласка, заповніть усі поля!"
-                    } else {
-                        "Авторизація успішна! Ласкаво просимо."
-                    }
-                    isLoading = false
-                    resultMessage
-                },
-                onSwitchToRegister = { isRegisterMode = true }
-            )
-        }
-
-        if (isLoading) {
-            Spacer(modifier = Modifier.height(16.dp))
-            CircularProgressIndicator()
         }
     }
 }
