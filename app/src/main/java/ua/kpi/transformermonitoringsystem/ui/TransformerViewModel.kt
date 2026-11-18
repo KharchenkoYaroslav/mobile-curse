@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.net.UnknownHostException
 import javax.inject.Inject
 import ua.kpi.transformermonitoringsystem.data.TransformerRepository
 import ua.kpi.transformermonitoringsystem.data.NetworkStats
@@ -93,15 +94,30 @@ class TransformerViewModel @Inject constructor(
                 _stats.value = repository.getNetworkStats(localData, localOnly = true).getOrNull()
                 _isLoading.value = false
 
-                launch {
-                    val result = repository.getAllTransformers(forceRefresh = true)
-                    result.onSuccess { freshData ->
-                        allTransformerEntities = freshData
-                        applyFilters()
-                        _stats.value = repository.getNetworkStats(freshData).getOrNull()
+                if (ErrorHandler.isInternetAvailable(appContext)) {
+                    launch {
+                        val result = repository.getAllTransformers(forceRefresh = true)
+                        result.onSuccess { freshData ->
+                            allTransformerEntities = freshData
+                            applyFilters()
+                            _stats.value = repository.getNetworkStats(freshData).getOrNull()
+                        }
                     }
                 }
             } else {
+                if (!ErrorHandler.isInternetAvailable(appContext)) {
+                    val fallbackData = repository.getAllTransformers(localOnly = true).getOrDefault(emptyList())
+                    if (fallbackData.isNotEmpty()) {
+                        allTransformerEntities = fallbackData
+                        applyFilters()
+                        _stats.value = repository.getNetworkStats(fallbackData, localOnly = true).getOrNull()
+                    } else {
+                        _errorMessage.value = ErrorHandler.handleException(appContext, UnknownHostException())
+                    }
+                    _isLoading.value = false
+                    return@launch
+                }
+
                 _isLoading.value = true
                 val result = repository.getAllTransformers(forceRefresh = true)
                 result.onSuccess { data ->
@@ -171,6 +187,13 @@ class TransformerViewModel @Inject constructor(
                 }
             }
 
+            if (!ErrorHandler.isInternetAvailable(appContext)) {
+                if (_selectedTransformer.value == null) {
+                    _errorMessage.value = ErrorHandler.handleException(appContext, UnknownHostException())
+                }
+                return@launch
+            }
+
             repository.getTransformerById(id)
                 .onSuccess { fresh ->
                     _selectedTransformer.value = fresh
@@ -201,6 +224,13 @@ class TransformerViewModel @Inject constructor(
                     ?: repository.getTransformerById(transformerId, localOnly = true).getOrNull()
                 _avgTemperature.value = currentNode?.temperature ?: 0.0
                 _avgLoad.value = currentNode?.currentLoad ?: 0.0
+            }
+
+            if (!ErrorHandler.isInternetAvailable(appContext)) {
+                if (cachedStatuses.isEmpty() && _selectedTransformer.value == null) {
+                    _errorMessage.value = ErrorHandler.handleException(appContext, UnknownHostException())
+                }
+                return@launch
             }
 
             try {
@@ -254,6 +284,7 @@ class TransformerViewModel @Inject constructor(
                 if (t !in -50.0..150.0) throw Exception("Температура має бути в межах від -50 до 150 °C")
                 if (l < 0.0) throw Exception("Поточне навантаження не може бути від'ємним")
                 if (maxL <= 0.0) throw Exception("Максимальне навантаження має бути більшим за 0")
+                if (!ErrorHandler.isInternetAvailable(appContext)) throw UnknownHostException()
 
                 val transformer = Transformer(
                     name = name.trim(),
@@ -294,6 +325,7 @@ class TransformerViewModel @Inject constructor(
                 if (v <= 0) throw Exception("Напруга має бути більшою за 0 В")
                 if (t !in -50.0..150.0) throw Exception("Температура має бути в межах від -50 до 150 °C")
                 if (l < 0.0) throw Exception("Навантаження не може бути від'ємним")
+                if (!ErrorHandler.isInternetAvailable(appContext)) throw UnknownHostException()
 
                 val status = TransformerStatus(voltage = v, temperature = t, load = l, transformerId = transformerId)
                 repository.addStatus(status)
@@ -319,6 +351,10 @@ class TransformerViewModel @Inject constructor(
      */
     fun deleteStatus(status: TransformerStatus) {
         viewModelScope.launch {
+            if (!ErrorHandler.isInternetAvailable(appContext)) {
+                _errorMessage.value = ErrorHandler.handleException(appContext, UnknownHostException())
+                return@launch
+            }
             repository.deleteStatus(status)
                 .onSuccess {
                     val id = _selectedTransformerId.value ?: return@onSuccess
@@ -344,6 +380,7 @@ class TransformerViewModel @Inject constructor(
                 if (location.isBlank()) throw Exception("Локація не може бути порожньою")
                 val maxL = maxLoadStr.toDoubleOrNull() ?: throw Exception("Введіть коректне макс. навантаження")
                 if (maxL <= 0.0) throw Exception("Максимальне навантаження має бути більшим за 0")
+                if (!ErrorHandler.isInternetAvailable(appContext)) throw UnknownHostException()
 
                 val updatedTransformer = transformer.copy(
                     name = name.trim(),
@@ -374,9 +411,13 @@ class TransformerViewModel @Inject constructor(
             _isLoading.value = true
             _errorMessage.value = null
             try {
+                if (!ErrorHandler.isInternetAvailable(appContext)) throw UnknownHostException()
                 repository.deleteTransformer(transformer)
-                loadData(forceRefresh = true)
-                _isSubmitted.value = true
+                    .onSuccess {
+                        loadData(forceRefresh = true)
+                        _isSubmitted.value = true
+                    }
+                    .onFailure { throw it }
             } catch (e: Exception) {
                 _errorMessage.value = ErrorHandler.handleException(appContext, e)
             } finally {

@@ -1,0 +1,4738 @@
+================================================================================
+FILE: app\build.gradle.kts
+================================================================================
+
+import java.util.Properties
+import java.io.FileInputStream
+
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
+}
+
+android {
+    namespace = "ua.kpi.transformermonitoringsystem"
+    compileSdk = 37 
+
+    defaultConfig {
+        applicationId = "ua.kpi.transformermonitoringsystem"
+        minSdk = 26
+        targetSdk = 37
+        versionCode = 1
+        versionName = "1.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        val properties = Properties()
+        val localPropertiesFile = rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            properties.load(FileInputStream(localPropertiesFile))
+        }
+
+        val apiBaseUrl = properties.getProperty("API_BASE_URL") ?: "http://10.0.2.2:8080/api/"
+        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+
+        val backendHosts = properties.getProperty("BACKEND_HOSTS") ?: "192.168.0.202,10.0.2.2"
+        buildConfigField("String", "BACKEND_HOSTS", "\"$backendHosts\"")
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+}
+
+dependencies {
+    implementation(project(":shared"))
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.material)
+
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.androidx.junit)
+
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+    debugImplementation(libs.androidx.compose.ui.tooling)
+
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.converter.gson)
+    implementation(libs.okhttp.logging.interceptor)
+    implementation(libs.gson)
+    implementation(libs.androidx.datastore.preferences)
+}
+
+================================================================================
+FILE: app\src\main\AndroidManifest.xml
+================================================================================
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:name=".TransformerApplication"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
+        android:theme="@style/Theme.TransformerMonitoringSystem">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/title_activity_main"
+            android:theme="@style/Theme.TransformerMonitoringSystem"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\MainActivity.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import dagger.hilt.android.AndroidEntryPoint
+import ua.kpi.transformermonitoringsystem.ui.AuthUiState
+import ua.kpi.transformermonitoringsystem.ui.AccountViewModel
+import ua.kpi.transformermonitoringsystem.ui.TransformerViewModel
+import ua.kpi.transformermonitoringsystem.ui.navigation.NavScreen
+import ua.kpi.transformermonitoringsystem.ui.screens.AuthScreen
+import ua.kpi.transformermonitoringsystem.ui.screens.TransformerDetailsScreen
+import ua.kpi.transformermonitoringsystem.ui.screens.TransformerFormScreen
+import ua.kpi.transformermonitoringsystem.ui.screens.TransformersScreen
+import ua.kpi.transformermonitoringsystem.ui.theme.TransformerMonitoringSystemTheme
+
+@AndroidEntryPoint
+class MainActivity : ComponentActivity() {
+
+    private val viewModel: TransformerViewModel by viewModels()
+    private val accountViewModel: AccountViewModel by viewModels()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        setContent {
+            TransformerMonitoringSystemTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    val authState by accountViewModel.authState.collectAsState()
+
+                    when (authState) {
+                        AuthUiState.Initializing -> {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
+                            }
+                        }
+
+                        AuthUiState.Unauthenticated -> {
+                            AuthScreen(accountViewModel = accountViewModel)
+                        }
+
+                        AuthUiState.Authenticated -> {
+                            val navController = rememberNavController()
+                            NavHost(
+                                navController = navController,
+                                startDestination = NavScreen.List.route
+                            ) {
+                                composable(NavScreen.List.route) {
+                                    TransformersScreen(
+                                        viewModel = viewModel,
+                                        accountViewModel = accountViewModel,
+                                        onNavigateToForm = { navController.navigate(NavScreen.Form.route) },
+                                        onNavigateToDetails = { id ->
+                                            navController.navigate(NavScreen.Details.createRoute(id))
+                                        }
+                                    )
+                                }
+                                composable(NavScreen.Form.route) {
+                                    TransformerFormScreen(
+                                        navController = navController,
+                                        viewModel = viewModel
+                                    )
+                                }
+                                composable(
+                                    route = NavScreen.Details.route,
+                                    arguments = listOf(navArgument("transformerId") { type = NavType.IntType })
+                                ) { backStackEntry ->
+                                    val id = backStackEntry.arguments?.getInt("transformerId") ?: 0
+                                    TransformerDetailsScreen(
+                                        transformerId = id,
+                                        navController = navController,
+                                        viewModel = viewModel,
+                                        accountViewModel = accountViewModel
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\TransformerApplication.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem
+
+import android.app.Application
+import dagger.hilt.android.HiltAndroidApp
+
+@HiltAndroidApp
+class TransformerApplication : Application()
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\data\ApiService.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.data
+
+import retrofit2.http.*
+import ua.kpi.transformermonitoringsystem.data.model.AuthCredentials
+import ua.kpi.transformermonitoringsystem.data.model.AuthResponse
+import ua.kpi.transformermonitoringsystem.data.model.ChangeRoleToAdminRequest
+import ua.kpi.transformermonitoringsystem.data.model.LogoutRequest
+import ua.kpi.transformermonitoringsystem.data.model.RefreshRequest
+import ua.kpi.transformermonitoringsystem.data.model.Transformer
+import ua.kpi.transformermonitoringsystem.data.model.TransformerStats
+import ua.kpi.transformermonitoringsystem.data.model.TransformerStatus
+import ua.kpi.transformermonitoringsystem.data.model.UpdateUser
+import ua.kpi.transformermonitoringsystem.data.model.UserProfile
+
+/**
+ * Інтерфейс REST API для авторизації користувачів.
+ */
+interface AuthApiService {
+    @POST("auth/register")
+    suspend fun register(@Body credentials: AuthCredentials): AuthResponse
+
+    @POST("auth/login")
+    suspend fun login(@Body credentials: AuthCredentials): AuthResponse
+
+    @POST("auth/logout")
+    suspend fun logout(@Body request: LogoutRequest)
+
+    @POST("auth/refresh")
+    suspend fun refreshTokens(@Body request: RefreshRequest): AuthResponse
+
+    @POST("auth/role/admin")
+    suspend fun changeRoleToAdmin(@Body request: ChangeRoleToAdminRequest)
+
+    @POST("auth/role/user")
+    suspend fun changeRoleToUser()
+}
+
+/**
+ * Інтерфейс REST API для роботи з профілем користувача.
+ */
+interface UserApiService {
+    @GET("users/profile")
+    suspend fun getCurrentUserProfile(): UserProfile
+
+    @PUT("users/profile")
+    suspend fun updateProfile(@Body dto: UpdateUser): UserProfile
+
+    @DELETE("users/profile")
+    suspend fun deleteProfile(): UserProfile
+}
+
+/**
+ * Інтерфейс REST API для роботи з трансформаторами.
+ */
+interface TransformerApiService {
+    @GET("transformers")
+    suspend fun getTransformers(): List<Transformer>
+
+    @GET("transformers/{id}")
+    suspend fun getTransformerById(@Path("id") id: Int): Transformer
+
+    @POST("transformers")
+    suspend fun addTransformer(@Body transformer: Transformer): Transformer
+
+    @PUT("transformers/{id}")
+    suspend fun updateTransformer(@Path("id") id: Int, @Body transformer: Transformer): Transformer
+
+    @DELETE("transformers/{id}")
+    suspend fun deleteTransformer(@Path("id") id: Int)
+
+    @GET("transformers/stats")
+    suspend fun getStats(): TransformerStats
+
+    @GET("transformers/{id}/statuses")
+    suspend fun getStatuses(@Path("id") id: Int): List<TransformerStatus>
+
+    @POST("transformers/{id}/statuses")
+    suspend fun addStatus(@Path("id") id: Int, @Body status: TransformerStatus): TransformerStatus
+
+    @DELETE("transformers/statuses/{statusId}")
+    suspend fun deleteStatus(@Path("statusId") statusId: Int)
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\data\TransformerRepository.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.data
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.withContext
+import ua.kpi.transformermonitoringsystem.data.model.AuthCredentials
+import ua.kpi.transformermonitoringsystem.data.model.AuthResponse
+import ua.kpi.transformermonitoringsystem.data.model.ChangeRoleToAdminRequest
+import ua.kpi.transformermonitoringsystem.data.model.LogoutRequest
+import ua.kpi.transformermonitoringsystem.data.model.TransformerStats as TransformerStatsDto
+import ua.kpi.transformermonitoringsystem.data.model.UpdateUser
+import ua.kpi.transformermonitoringsystem.data.model.UserProfile
+import ua.kpi.transformermonitoringsystem.database.AuthDataStore
+import ua.kpi.transformermonitoringsystem.database.TransformerDao
+import ua.kpi.transformermonitoringsystem.database.entity.Transformer
+import ua.kpi.transformermonitoringsystem.database.entity.TransformerStatus
+import ua.kpi.transformermonitoringsystem.network.ErrorHandler.retryRequest
+import ua.kpi.transformermonitoringsystem.util.toDto
+import ua.kpi.transformermonitoringsystem.util.toEntity
+
+interface TransformerRepository {
+    //  Session & Auth State (AuthDataStore) 
+    val accessTokenFlow: Flow<String?>
+    val refreshTokenFlow: Flow<String?>
+    val roleFlow: Flow<String>
+    val loginFlow: Flow<String?>
+
+    //  Auth (AuthApiService + AuthDataStore) 
+    suspend fun register(credentials: AuthCredentials): Result<AuthResponse>
+    suspend fun login(credentials: AuthCredentials): Result<AuthResponse>
+    suspend fun logout(): Result<Unit>
+    suspend fun changeRoleToAdmin(secretKey: String): Result<Unit>
+    suspend fun changeRoleToUser(): Result<Unit>
+
+    //  User Profile (UserApiService + AuthDataStore) 
+    suspend fun getCurrentUserProfile(): Result<UserProfile>
+    suspend fun updateProfile(dto: UpdateUser): Result<UserProfile>
+    suspend fun deleteProfile(): Result<UserProfile>
+
+    //  Transformers (TransformerApiService + Room) 
+    suspend fun getAllTransformers(
+        forceRefresh: Boolean = false,
+        localOnly: Boolean = false
+    ): Result<List<Transformer>>
+    suspend fun getTransformerById(
+        id: Int,
+        localOnly: Boolean = false
+    ): Result<Transformer>
+    suspend fun addTransformer(transformer: Transformer): Result<Transformer>
+    suspend fun insertTransformerWithData(
+        transformer: Transformer,
+        statuses: List<TransformerStatus> = emptyList()
+    ): Result<Transformer>
+    suspend fun updateTransformer(transformer: Transformer): Result<Transformer>
+    suspend fun deleteTransformer(transformer: Transformer): Result<Unit>
+    suspend fun deleteTransformerById(id: Int): Result<Unit>
+
+    //  Stats & Telemetry (TransformerApiService + Room)
+    suspend fun getNetworkStats(
+        transformerEntities: List<Transformer>,
+        localOnly: Boolean = false
+    ): Result<NetworkStats>
+    fun calculateNetworkStatsLocally(transformerEntities: List<Transformer>): NetworkStats
+    suspend fun getAdminStats(): Result<TransformerStatsDto>
+    suspend fun getStatuses(
+        transformerId: Int,
+        localOnly: Boolean = false
+    ): Result<List<TransformerStatus>>
+    suspend fun addStatus(status: TransformerStatus): Result<TransformerStatus>
+    suspend fun deleteStatus(status: TransformerStatus): Result<Unit>
+    suspend fun getAverageTemperature(transformerId: Int): Result<Double>
+    suspend fun getAverageLoad(transformerId: Int): Result<Double>
+}
+
+class TransformerRepositoryImpl(
+    private val authApi: AuthApiService,
+    private val userApi: UserApiService,
+    private val transformerApi: TransformerApiService,
+    private val dao: TransformerDao,
+    private val authDataStore: AuthDataStore
+) : TransformerRepository {
+
+    override val accessTokenFlow: Flow<String?> = authDataStore.accessTokenFlow
+    override val refreshTokenFlow: Flow<String?> = authDataStore.refreshTokenFlow
+    override val roleFlow: Flow<String> = authDataStore.roleFlow
+    override val loginFlow: Flow<String?> = authDataStore.loginFlow
+
+    private suspend fun isAuthenticated(): Boolean =
+        !authDataStore.accessTokenFlow.firstOrNull().isNullOrBlank()
+
+    private suspend inline fun <T> safeCall(
+        crossinline block: suspend () -> T
+    ): Result<T> = withContext(Dispatchers.IO) {
+        try {
+            Result.success(block())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // AuthApiService + AuthDataStore
+
+    override suspend fun register(credentials: AuthCredentials): Result<AuthResponse> = safeCall {
+        val response = authApi.register(credentials)
+        authDataStore.saveAuthData(
+            accessToken = response.accessToken,
+            refreshToken = response.refreshToken,
+            role = "USER",
+            login = credentials.login
+        )
+        response
+    }
+
+    override suspend fun login(credentials: AuthCredentials): Result<AuthResponse> = safeCall {
+        val response = authApi.login(credentials)
+        authDataStore.saveAuthData(
+            accessToken = response.accessToken,
+            refreshToken = response.refreshToken,
+            role = "USER",
+            login = credentials.login
+        )
+        response
+    }
+
+    override suspend fun logout(): Result<Unit> = safeCall {
+        try {
+            val refreshToken = authDataStore.refreshTokenFlow.firstOrNull()
+            if (!refreshToken.isNullOrBlank()) {
+                authApi.logout(LogoutRequest(refreshToken))
+            }
+        } finally {
+            authDataStore.clearAuthData()
+        }
+    }
+
+    override suspend fun changeRoleToAdmin(secretKey: String): Result<Unit> = withContext(Dispatchers.IO) {
+        if (!isAuthenticated()) {
+            return@withContext Result.failure(IllegalStateException("Користувач не авторизований"))
+        }
+        try {
+            authApi.changeRoleToAdmin(ChangeRoleToAdminRequest(secretKey))
+            authDataStore.updateRole("ADMIN")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun changeRoleToUser(): Result<Unit> = withContext(Dispatchers.IO) {
+        if (!isAuthenticated()) {
+            return@withContext Result.failure(IllegalStateException("Користувач не авторизований"))
+        }
+        try {
+            authApi.changeRoleToUser()
+            authDataStore.updateRole("USER")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+
+    // UserApiService + AuthDataStore
+
+
+    override suspend fun getCurrentUserProfile(): Result<UserProfile> = withContext(Dispatchers.IO) {
+        if (!isAuthenticated()) {
+            return@withContext Result.failure(IllegalStateException("Користувач не авторизований"))
+        }
+        try {
+            val profile = retryRequest(times = 2) { userApi.getCurrentUserProfile() }
+            authDataStore.updateRole(profile.role.name)
+            Result.success(profile)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun updateProfile(dto: UpdateUser): Result<UserProfile> = withContext(Dispatchers.IO) {
+        if (!isAuthenticated()) {
+            return@withContext Result.failure(IllegalStateException("Користувач не авторизований"))
+        }
+        try {
+            val updated = retryRequest(times = 2) { userApi.updateProfile(dto) }
+            Result.success(updated)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun deleteProfile(): Result<UserProfile> = withContext(Dispatchers.IO) {
+        if (!isAuthenticated()) {
+            return@withContext Result.failure(IllegalStateException("Користувач не авторизований"))
+        }
+        try {
+            val deleted = userApi.deleteProfile()
+            authDataStore.clearAuthData()
+            Result.success(deleted)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // TransformerApiService + Room
+
+    override suspend fun getAllTransformers(
+        forceRefresh: Boolean,
+        localOnly: Boolean
+    ): Result<List<Transformer>> =
+        withContext(Dispatchers.IO) {
+            if (localOnly) {
+                val localData = dao.getAllTransformers()
+                return@withContext if (localData.isNotEmpty()) {
+                    Result.success(localData)
+                } else {
+                    Result.failure(NoSuchElementException("Локальний кеш трансформаторів порожній"))
+                }
+            }
+
+            try {
+                val remoteDtos = retryRequest(times = 3) { transformerApi.getTransformers() }
+                val remoteEntities = remoteDtos.map { it.toEntity() }
+
+                val localMap = dao.getAllTransformers().associateBy { it.id }
+                val remoteIds = remoteEntities.map { it.id }.toSet()
+
+                // Видаляємо лише ті вузли, яких більше немає на сервері
+                localMap.values
+                    .filter { it.id !in remoteIds }
+                    .forEach { dao.deleteTransformer(it) }
+
+                remoteEntities.forEach { remote ->
+                    if (localMap.containsKey(remote.id)) {
+                        dao.updateTransformer(remote)
+                    } else {
+                        dao.insertTransformer(remote)
+                    }
+                }
+
+                Result.success(remoteEntities)
+            } catch (e: Exception) {
+                if (!forceRefresh) {
+                    val localData = dao.getAllTransformers()
+                    if (localData.isNotEmpty()) {
+                        return@withContext Result.success(localData)
+                    }
+                }
+                Result.failure(e)
+            }
+        }
+
+    override suspend fun getTransformerById(
+        id: Int,
+        localOnly: Boolean
+    ): Result<Transformer> =
+        withContext(Dispatchers.IO) {
+            if (localOnly) {
+                val localEntity = dao.getAllTransformers().find { it.id == id }
+                return@withContext if (localEntity != null) {
+                    Result.success(localEntity)
+                } else {
+                    Result.failure(NoSuchElementException("Трансформатор з ID $id відсутній у кеші"))
+                }
+            }
+
+            try {
+                val remoteDto = retryRequest(times = 2) { transformerApi.getTransformerById(id) }
+                val entity = remoteDto.toEntity()
+                dao.updateTransformer(entity)
+                Result.success(entity)
+            } catch (e: Exception) {
+                val localEntity = dao.getAllTransformers().find { it.id == id }
+                if (localEntity != null) {
+                    Result.success(localEntity)
+                } else {
+                    Result.failure(e)
+                }
+            }
+        }
+
+    override suspend fun addTransformer(transformer: Transformer): Result<Transformer> =
+        insertTransformerWithData(transformer, emptyList())
+
+    override suspend fun insertTransformerWithData(
+        transformer: Transformer,
+        statuses: List<TransformerStatus>
+    ): Result<Transformer> = withContext(Dispatchers.IO) {
+        try {
+            val createdDto = retryRequest(times = 2) {
+                transformerApi.addTransformer(transformer.toDto())
+            }
+            val createdEntity = createdDto.toEntity()
+            dao.insertTransformer(createdEntity)
+
+            statuses.forEach { status ->
+                val createdStatusDto = retryRequest(times = 2) {
+                    transformerApi.addStatus(
+                        createdEntity.id,
+                        status.copy(transformerId = createdEntity.id).toDto()
+                    )
+                }
+                dao.insertStatus(createdStatusDto.toEntity())
+            }
+            Result.success(createdEntity)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun updateTransformer(transformer: Transformer): Result<Transformer> =
+        withContext(Dispatchers.IO) {
+            try {
+                val updatedDto = retryRequest(times = 2) {
+                    transformerApi.updateTransformer(transformer.id, transformer.toDto())
+                }
+                val updatedEntity = updatedDto.toEntity()
+                dao.updateTransformer(updatedEntity)
+                Result.success(updatedEntity)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    override suspend fun deleteTransformer(transformer: Transformer): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                retryRequest(times = 2) { transformerApi.deleteTransformer(transformer.id) }
+                dao.deleteTransformer(transformer)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    override suspend fun deleteTransformerById(id: Int): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                retryRequest(times = 2) { transformerApi.deleteTransformer(id) }
+                dao.getAllTransformers().find { it.id == id }?.let { dao.deleteTransformer(it) }
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    override suspend fun getNetworkStats(
+        transformerEntities: List<Transformer>,
+        localOnly: Boolean
+    ): Result<NetworkStats> =
+        withContext(Dispatchers.IO) {
+            if (localOnly) {
+                return@withContext if (transformerEntities.isNotEmpty()) {
+                    Result.success(calculateNetworkStatsLocally(transformerEntities))
+                } else {
+                    Result.failure(NoSuchElementException("Локальні дані для розрахунку показників відсутні"))
+                }
+            }
+
+            try {
+                val dto = retryRequest(times = 2) { transformerApi.getStats() }
+                Result.success(
+                    NetworkStats(
+                        averageLoad = dto.averageLoad,
+                        averageTemperature = dto.averageTemperature,
+                        criticalCount = dto.criticalIssues
+                    )
+                )
+            } catch (e: Exception) {
+                if (transformerEntities.isNotEmpty()) {
+                    Result.success(calculateNetworkStatsLocally(transformerEntities))
+                } else {
+                    Result.failure(e)
+                }
+            }
+        }
+
+    override fun calculateNetworkStatsLocally(transformerEntities: List<Transformer>): NetworkStats {
+        if (transformerEntities.isEmpty()) return NetworkStats(0.0, 0.0, 0)
+
+        val avgLoad = transformerEntities.map { it.currentLoad }.average()
+        val avgTemp = transformerEntities.map { it.temperature }.average()
+        val criticalCount = transformerEntities.count {
+            (it.temperature > 85.0) || (it.currentLoad > (it.maxLoad * 0.9))
+        }
+
+        return NetworkStats(avgLoad, avgTemp, criticalCount)
+    }
+
+    override suspend fun getAdminStats(): Result<TransformerStatsDto> = safeCall {
+        retryRequest(times = 2) { transformerApi.getStats() }
+    }
+
+    override suspend fun getStatuses(
+        transformerId: Int,
+        localOnly: Boolean
+    ): Result<List<TransformerStatus>> =
+        withContext(Dispatchers.IO) {
+            if (localOnly) {
+                val localStatuses = dao.getStatusesForTransformer(transformerId)
+                return@withContext if (localStatuses.isNotEmpty()) {
+                    Result.success(localStatuses)
+                } else {
+                    Result.failure(NoSuchElementException("Історія показників у кеші порожня"))
+                }
+            }
+
+            try {
+                val remoteDtos = retryRequest(times = 2) { transformerApi.getStatuses(transformerId) }
+                val remoteEntities = remoteDtos.map { it.toEntity() }
+                remoteEntities.forEach { dao.insertStatus(it) }
+                Result.success(remoteEntities)
+            } catch (e: Exception) {
+                val localStatuses = dao.getStatusesForTransformer(transformerId)
+                if (localStatuses.isNotEmpty()) {
+                    Result.success(localStatuses)
+                } else {
+                    Result.failure(e)
+                }
+            }
+        }
+
+    override suspend fun addStatus(status: TransformerStatus): Result<TransformerStatus> =
+        withContext(Dispatchers.IO) {
+            try {
+                val createdDto = retryRequest(times = 2) {
+                    transformerApi.addStatus(status.transformerId, status.toDto())
+                }
+                val createdEntity = createdDto.toEntity()
+                dao.insertStatus(createdEntity)
+                Result.success(createdEntity)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    override suspend fun deleteStatus(status: TransformerStatus): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                retryRequest(times = 2) { transformerApi.deleteStatus(status.id) }
+                dao.deleteStatus(status)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    override suspend fun getAverageTemperature(transformerId: Int): Result<Double> = safeCall {
+        dao.getAverageTemperature(transformerId) ?: 0.0
+    }
+
+    override suspend fun getAverageLoad(transformerId: Int): Result<Double> = safeCall {
+        dao.getAverageLoad(transformerId) ?: 0.0
+    }
+}
+
+data class NetworkStats(
+    val averageLoad: Double,
+    val averageTemperature: Double,
+    val criticalCount: Int
+)
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\data\model\AuthCredentials.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.data.model
+
+import ua.kpi.transformermonitoringsystem.shared.auth.AuthCredentials as SharedAuthCredentials
+
+/**
+ * Дані авторизації.
+ */
+data class AuthCredentials(
+    override val login: String = "",
+    override val password: String = ""
+) : SharedAuthCredentials
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\data\model\AuthResponse.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.data.model
+
+import ua.kpi.transformermonitoringsystem.shared.auth.AuthResponse as SharedAuthResponse
+
+/**
+ * Відповідь сервера авторизації.
+ */
+data class AuthResponse(
+    override val accessToken: String,
+    override val refreshToken: String
+) : SharedAuthResponse
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\data\model\ChangeRoleToAdminRequest.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.data.model
+
+import ua.kpi.transformermonitoringsystem.shared.auth.ChangeRoleToAdminRequest as SharedChangeRoleToAdminRequest
+
+/**
+ * Запит отримання ролі адміністратора за секретним ключем.
+ */
+data class ChangeRoleToAdminRequest(
+    override val key: String = ""
+) : SharedChangeRoleToAdminRequest
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\data\model\LogoutRequest.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.data.model
+
+import ua.kpi.transformermonitoringsystem.shared.auth.LogoutRequest as SharedLogoutRequest
+
+/**
+ * Запит виходу з системи.
+ */
+data class LogoutRequest(
+    override val refreshToken: String? = null
+) : SharedLogoutRequest
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\data\model\RefreshRequest.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.data.model
+
+import ua.kpi.transformermonitoringsystem.shared.auth.RefreshRequest as SharedRefreshRequest
+
+/**
+ * Запит оновлення токена.
+ */
+data class RefreshRequest(
+    override val refreshToken: String? = null
+) : SharedRefreshRequest
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\data\model\Transformer.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.data.model
+
+import ua.kpi.transformermonitoringsystem.shared.core.ITransformer
+
+/**
+ * Трансформатор з сервера.
+ */
+data class Transformer(
+    override val id: Int = 0,
+    override val name: String,
+    override val location: String,
+    override val currentLoad: Double = 0.0,
+    override val temperature: Double = 0.0,
+    override val maxLoad: Double = 100.0
+) : ITransformer
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\data\model\TransformerStats.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.data.model
+
+import ua.kpi.transformermonitoringsystem.shared.core.ITransformerStats
+
+/**
+ * Агрегована статистика мережі.
+ */
+data class TransformerStats(
+    override val totalPower: Double = 0.0,
+    override val criticalIssues: Int = 0,
+    override val averageLoad: Double = 0.0,
+    override val averageTemperature: Double = 0.0,
+    override val totalCount: Int = 0
+) : ITransformerStats
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\data\model\TransformerStatus.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.data.model
+
+import ua.kpi.transformermonitoringsystem.shared.core.ITransformerStatus
+
+/**
+ * Статус/телеметрія трансформатора з сервера.
+ */
+data class TransformerStatus(
+    override val id: Int = 0,
+    override val transformerId: Int = 0,
+    override val voltage: Double = 0.0,
+    override val temperature: Double = 0.0,
+    override val load: Double = 0.0
+) : ITransformerStatus
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\data\model\UpdateUser.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.data.model
+
+import ua.kpi.transformermonitoringsystem.shared.user.UpdateUser as SharedUpdateUser
+
+/**
+ * Оновлення даних профілю користувача.
+ */
+data class UpdateUser(
+    override val currentPassword: String? = null,
+    override val login: String? = null,
+    override val password: String? = null
+) : SharedUpdateUser
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\data\model\UserProfile.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.data.model
+
+import java.time.Instant
+import ua.kpi.transformermonitoringsystem.shared.auth.Role
+import ua.kpi.transformermonitoringsystem.shared.user.UserProfile as SharedUserProfile
+
+/**
+ * Профіль користувача з сервера.
+ */
+data class UserProfile(
+    override val id: String,
+    override val login: String,
+    override val role: Role,
+    override val createdAt: Instant
+) : SharedUserProfile
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\database\AppDatabase.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.database
+
+import androidx.room.Database
+import androidx.room.RoomDatabase
+import ua.kpi.transformermonitoringsystem.database.entity.Transformer
+import ua.kpi.transformermonitoringsystem.database.entity.TransformerStatus
+
+// Головний клас бази даних Room, який об'єднує сутності
+@Database(
+    entities = [Transformer::class, TransformerStatus::class],
+    version = 3,
+    exportSchema = false
+)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun transformerDao(): TransformerDao
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\database\AuthDataStore.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.database
+
+import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+
+/**
+ * Збереження JWT токенів та ролей у DataStore.
+ */
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "auth_prefs")
+
+class AuthDataStore(private val context: Context) {
+    companion object {
+        private val ACCESS_TOKEN_KEY = stringPreferencesKey("access_token")
+        private val REFRESH_TOKEN_KEY = stringPreferencesKey("refresh_token")
+        private val ROLE_KEY = stringPreferencesKey("user_role")
+        private val LOGIN_KEY = stringPreferencesKey("user_login")
+    }
+
+    /**
+     * Потік доступу до JWT Access Token.
+     */
+    val accessTokenFlow: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[ACCESS_TOKEN_KEY]?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Потік доступу до Refresh Token.
+     */
+    val refreshTokenFlow: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[REFRESH_TOKEN_KEY]?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Потік доступу до ролі користувача ("ADMIN", "USER", або "GUEST").
+     */
+    val roleFlow: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[ROLE_KEY] ?: "GUEST"
+    }
+
+    /**
+     * Потік доступу до логіну користувача.
+     */
+    val loginFlow: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[LOGIN_KEY]
+    }
+
+    /**
+     * Збереження токенів, ролі та логін.
+     */
+    suspend fun saveAuthData(accessToken: String, refreshToken: String, role: String, login: String) {
+        context.dataStore.edit { preferences ->
+            preferences[ACCESS_TOKEN_KEY] = accessToken
+            preferences[REFRESH_TOKEN_KEY] = refreshToken
+            preferences[ROLE_KEY] = role
+            preferences[LOGIN_KEY] = login
+        }
+    }
+
+    /**
+     * Оновлення ролі користувача при зміні прав.
+     */
+    suspend fun updateRole(role: String) {
+        context.dataStore.edit { preferences ->
+            preferences[ROLE_KEY] = role
+        }
+    }
+
+    /**
+     * Очищення даних авторизації при виході з системи (Logout).
+     */
+    suspend fun clearAuthData() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(ACCESS_TOKEN_KEY)
+            preferences.remove(REFRESH_TOKEN_KEY)
+            preferences.remove(ROLE_KEY)
+            preferences.remove(LOGIN_KEY)
+        }
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\database\TransformerDao.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.database
+
+import androidx.room.Dao
+import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Update
+import ua.kpi.transformermonitoringsystem.database.entity.Transformer
+import ua.kpi.transformermonitoringsystem.database.entity.TransformerStatus
+
+// Data Access Object (DAO) для виконання запитів до БД
+@Dao
+interface TransformerDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTransformer(transformer: Transformer): Long
+
+    @Query("DELETE FROM transformers")
+    suspend fun clearAll()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(transformerEntities: List<Transformer>)
+
+    @Transaction
+    suspend fun clearAndInsertAll(transformerEntities: List<Transformer>) {
+        clearAll()
+        insertAll(transformerEntities)
+    }
+
+    @Query("SELECT * FROM transformers ORDER BY name ASC")
+    suspend fun getAllTransformers(): List<Transformer>
+
+    @Update
+    suspend fun updateTransformer(transformer: Transformer)
+
+    @Delete
+    suspend fun deleteTransformer(transformer: Transformer)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertStatus(status: TransformerStatus)
+
+    @Delete
+    suspend fun deleteStatus(status: TransformerStatus)
+
+    @Query("SELECT * FROM transformer_status WHERE transformerId = :transformerId ORDER BY id DESC")
+    suspend fun getStatusesForTransformer(transformerId: Int): List<TransformerStatus>
+
+    @Query("SELECT AVG(temperature) FROM transformer_status WHERE transformerId = :transformerId")
+    suspend fun getAverageTemperature(transformerId: Int): Double?
+
+    @Query("SELECT AVG(load) FROM transformer_status WHERE transformerId = :transformerId")
+    suspend fun getAverageLoad(transformerId: Int): Double?
+
+    @Transaction
+    suspend fun insertTransformerWithStatuses(
+        transformer: Transformer,
+        statuses: List<TransformerStatus>
+    ) {
+        val id = insertTransformer(transformer.copy(id = 0)).toInt()
+        statuses.forEach { insertStatus(it.copy(id = 0, transformerId = id)) }
+    }
+}
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\database\entity\Transformer.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.database.entity
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+// Сутність (таблиця) для зберігання базових даних трансформатора
+@Entity(tableName = "transformers")
+data class Transformer(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val name: String,
+    val location: String,
+    val currentLoad: Double = 0.0,
+    val temperature: Double = 0.0,
+    val maxLoad: Double = 100.0
+)
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\database\entity\TransformerStatus.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.database.entity
+
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.PrimaryKey
+
+// Сутність для збереження історії статусів
+@Entity(
+    tableName = "transformer_status",
+    foreignKeys = [ForeignKey(
+        entity = Transformer::class,
+        parentColumns = ["id"],
+        childColumns = ["transformerId"],
+        onDelete = ForeignKey.CASCADE
+    )],
+    indices = [Index("transformerId")]
+)
+data class TransformerStatus(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val transformerId: Int,
+    val voltage: Double,
+    val temperature: Double,
+    val load: Double
+)
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\di\ApiModule.kt
+================================================================================
+
+@file:Suppress("unused")
+
+package ua.kpi.transformermonitoringsystem.di
+
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import retrofit2.Retrofit
+import ua.kpi.transformermonitoringsystem.data.AuthApiService
+import ua.kpi.transformermonitoringsystem.data.TransformerApiService
+import ua.kpi.transformermonitoringsystem.data.UserApiService
+import javax.inject.Singleton
+
+// Провайдер API сервісів додатку
+@Module
+@InstallIn(SingletonComponent::class)
+object ApiModule {
+
+    @Provides
+    @Singleton
+    fun provideTransformerApiService(retrofit: Retrofit): TransformerApiService {
+        return retrofit.create(TransformerApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAuthApiService(retrofit: Retrofit): AuthApiService {
+        return retrofit.create(AuthApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideUserApiService(retrofit: Retrofit): UserApiService {
+        return retrofit.create(UserApiService::class.java)
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\di\AppModule.kt
+================================================================================
+
+@file:Suppress("unused")
+
+package ua.kpi.transformermonitoringsystem.di
+
+import android.content.Context
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import ua.kpi.transformermonitoringsystem.database.AuthDataStore
+import javax.inject.Singleton
+
+// Провайдер загальних системних компонентів
+@Module
+@InstallIn(SingletonComponent::class)
+object AppModule {
+
+    @Provides
+    @Singleton
+    fun provideAuthDataStore(@ApplicationContext context: Context): AuthDataStore {
+        return AuthDataStore(context)
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\di\DatabaseModule.kt
+================================================================================
+
+@file:Suppress("unused")
+
+package ua.kpi.transformermonitoringsystem.di
+
+import android.content.Context
+import androidx.room.Room
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import ua.kpi.transformermonitoringsystem.database.AppDatabase
+import ua.kpi.transformermonitoringsystem.database.TransformerDao
+import javax.inject.Singleton
+
+// Провайдер БД та її DAO
+@Module
+@InstallIn(SingletonComponent::class)
+object DatabaseModule {
+
+    @Provides
+    @Singleton
+    fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
+        return Room.databaseBuilder(
+            context,
+            AppDatabase::class.java,
+            "transformer-db"
+        )
+            .fallbackToDestructiveMigration(dropAllTables = true)
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideTransformerDao(database: AppDatabase): TransformerDao {
+        return database.transformerDao()
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\di\NetworkModule.kt
+================================================================================
+
+@file:Suppress("unused")
+
+package ua.kpi.transformermonitoringsystem.di
+
+import com.google.gson.GsonBuilder
+import com.google.gson.TypeAdapter
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonToken
+import com.google.gson.stream.JsonWriter
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import ua.kpi.transformermonitoringsystem.BuildConfig
+import ua.kpi.transformermonitoringsystem.data.AuthApiService
+import ua.kpi.transformermonitoringsystem.database.AuthDataStore
+import ua.kpi.transformermonitoringsystem.network.AuthInterceptor
+import ua.kpi.transformermonitoringsystem.network.BackendHostManager
+import ua.kpi.transformermonitoringsystem.network.TokenAuthenticator
+import java.io.IOException
+import java.time.Instant
+import java.util.concurrent.TimeUnit
+import javax.inject.Provider
+import javax.inject.Singleton
+
+// Мережевий провайдер
+@Module
+@InstallIn(SingletonComponent::class)
+object NetworkModule {
+
+    @Provides
+    @Singleton
+    fun provideOkHttpClient(
+        authDataStore: AuthDataStore,
+        authApiProvider: Provider<AuthApiService>,
+        backendHostManager: BackendHostManager,
+    ): OkHttpClient {
+        val candidateHosts = BuildConfig.BACKEND_HOSTS.split(",")
+        val logging = HttpLoggingInterceptor().apply {
+            level = HttpLoggingInterceptor.Level.BODY
+        }
+        return OkHttpClient.Builder()
+            .connectTimeout(4, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .addInterceptor { chain ->
+                val request = chain.request()
+                val url = request.url
+
+                val hostsToTry = mutableListOf<String>()
+                val currentActive = backendHostManager.activeBackendHost
+                if (!hostsToTry.contains(currentActive)) {
+                    hostsToTry.add(currentActive)
+                }
+
+                candidateHosts.forEach { h ->
+                    if (!hostsToTry.contains(h)) hostsToTry.add(h)
+                }
+
+                var lastException: IOException? = null
+                for (host in hostsToTry) {
+                    try {
+                        val newUrl = url.newBuilder().host(host).build()
+                        val newRequest = request.newBuilder().url(newUrl).build()
+                        val response = chain.proceed(newRequest)
+                        backendHostManager.activeBackendHost = host
+                        return@addInterceptor response
+                    } catch (e: IOException) {
+                        lastException = e
+                    }
+                }
+                throw lastException ?: IOException("Не вдалося підключитися до сервера")
+            }
+            .addInterceptor(AuthInterceptor(authDataStore))
+            .authenticator(TokenAuthenticator(authDataStore, authApiProvider))
+            .addInterceptor(logging)
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
+        val gson = GsonBuilder()
+            .registerTypeAdapter(Instant::class.java, object : TypeAdapter<Instant>() {
+                override fun write(out: JsonWriter, value: Instant?) {
+                    if (value == null) {
+                        out.nullValue()
+                    } else {
+                        out.value(value.toString())
+                    }
+                }
+
+                override fun read(reader: JsonReader): Instant? {
+                    if (reader.peek() == JsonToken.NULL) {
+                        reader.nextNull()
+                        return null
+                    }
+                    val str = reader.nextString()
+                    return try {
+                        Instant.parse(str)
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+            })
+            .create()
+
+        return Retrofit.Builder()
+            .baseUrl(BuildConfig.API_BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create(gson))
+            .build()
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\di\RepositoryModule.kt
+================================================================================
+
+@file:Suppress("unused")
+
+package ua.kpi.transformermonitoringsystem.di
+
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import ua.kpi.transformermonitoringsystem.data.AuthApiService
+import ua.kpi.transformermonitoringsystem.data.UserApiService
+import ua.kpi.transformermonitoringsystem.data.TransformerApiService
+import ua.kpi.transformermonitoringsystem.database.TransformerDao
+import ua.kpi.transformermonitoringsystem.database.AuthDataStore
+import ua.kpi.transformermonitoringsystem.data.TransformerRepository
+import ua.kpi.transformermonitoringsystem.data.TransformerRepositoryImpl
+import javax.inject.Singleton
+
+// Провайдер репозиторіїв
+@Module
+@InstallIn(SingletonComponent::class)
+object RepositoryModule {
+
+    @Provides
+    @Singleton
+    fun provideTransformerRepository(
+        authApi: AuthApiService,
+        userApi: UserApiService,
+        transformerApi: TransformerApiService,
+        dao: TransformerDao,
+        authDataStore: AuthDataStore
+    ): TransformerRepository {
+        return TransformerRepositoryImpl(authApi, userApi, transformerApi, dao, authDataStore)
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\network\AuthInterceptor.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.network
+
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.runBlocking
+import okhttp3.Interceptor
+import okhttp3.Response
+import ua.kpi.transformermonitoringsystem.database.AuthDataStore
+
+/**
+ * Interceptor для автоматичної додачі заголовка авторизації Authorization: Bearer <accessToken> до кожного HTTP-запиту.
+ */
+class AuthInterceptor(private val authDataStore: AuthDataStore) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val original = chain.request()
+        val path = original.url.encodedPath
+
+        if (path.endsWith("auth/login") || path.endsWith("auth/register") || path.endsWith("auth/refresh")) {
+            return chain.proceed(original)
+        }
+
+        val token = try {
+            runBlocking { authDataStore.accessTokenFlow.firstOrNull() }
+        } catch (_: Exception) {
+            null
+        }
+
+        val request = if (!token.isNullOrBlank()) {
+            original.newBuilder()
+                .header("Authorization", "Bearer $token")
+                .build()
+        } else {
+            original
+        }
+        return chain.proceed(request)
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\network\BackendHostManager.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.network
+
+import ua.kpi.transformermonitoringsystem.BuildConfig
+import javax.inject.Inject
+import javax.inject.Singleton
+
+// Логіка побудови посилань та налаштування хостів
+@Singleton
+class BackendHostManager @Inject constructor() {
+    private val candidateHosts = BuildConfig.BACKEND_HOSTS.split(",")
+    var activeBackendHost: String = candidateHosts.firstOrNull() ?: "10.0.2.2"
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\network\ErrorHandler.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.network
+
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.util.Log
+import retrofit2.HttpException
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
+
+/**
+ * Централізований обробник помилок мережевих запитів.
+ * Підтримує перевірку інтернет-з'єднання, логування у файл error_log.txt,
+ * автоматичний механізм повторних спроб для тимчасових збоїв та диференційоване
+ * інформування користувача залежно від HTTP-коду помилки.
+ */
+object ErrorHandler {
+
+    /**
+     * Перевірка наявності активного інтернет-з'єднання на пристрої.
+     */
+    fun isInternetAvailable(context: Context): Boolean {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return false
+        val network = connectivityManager.activeNetwork ?: return false
+        val activeNetwork = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return activeNetwork.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    /**
+     * Реєстрація помилок у внутрішній файл error_log.txt у сховищі пристрою.
+     */
+    fun logErrorToFile(context: Context, message: String) {
+        try {
+            val file = File(context.filesDir, "error_log.txt")
+            FileOutputStream(file, true).bufferedWriter().use { writer ->
+                writer.write("${System.currentTimeMillis()}: $message\n")
+            }
+        } catch (e: Exception) {
+            Log.e("ErrorHandler", "Cannot log error to file: ${e.localizedMessage}")
+        }
+    }
+
+    /**
+     * Централізована обробка винятків із перевіркою мережі та HTTP-кодів.
+     * Повертає зрозуміле українськомовне повідомлення для відображення користувачеві в UI.
+     */
+    fun handleException(context: Context, e: Throwable): String {
+        val message = when {
+            !isInternetAvailable(context) -> "Відсутнє з'єднання з Інтернетом. Перевірте мережу."
+            e is UnknownHostException || e is ConnectException -> "Не вдалося з'єднатися з сервером. Перевірте мережу."
+            e is SocketTimeoutException -> "Перевищено час очікування відповіді від сервера (Timeout)."
+            e is HttpException -> {
+                when (e.code()) {
+                    400 -> "Некоректний запит до сервера (HTTP 400)."
+                    401 -> "Неавторизований доступ (HTTP 401). Перевірте логін та токен."
+                    403 -> "Доступ заборонено (HTTP 403). У вас недостатньо прав."
+                    404 -> "Запитуваний ресурс або трансформатор не знайдено (HTTP 404)."
+                    500 -> "Внутрішня помилка сервера (HTTP 500). Спробуйте пізніше."
+                    502, 503, 504 -> "Сервер тимчасово недоступний (HTTP ${e.code()})."
+                    else -> "Помилка сервера: HTTP ${e.code()}"
+                }
+            }
+            e is IOException -> "Помилка вводу-виводу при передачі даних по мережі."
+            else -> e.localizedMessage ?: "Сталася невідома помилка"
+        }
+        
+        Log.e("ErrorHandler", "Handled exception: $message", e)
+        logErrorToFile(context, message)
+        return message
+    }
+
+    /**
+     * Автоматичний механізм повторення запитів при тимчасових мережевих збоях.
+     */
+    suspend fun <T> retryRequest(times: Int = 3, delayMs: Long = 1500L, block: suspend () -> T): T {
+        var currentAttempt = 0
+        var lastError: Exception? = null
+        while (currentAttempt < times) {
+            try {
+                return block()
+            } catch (e: Exception) {
+                lastError = e
+                currentAttempt++
+                val isTransientError = (e is HttpException && e.code() in listOf(500, 502, 503, 504)) || e is IOException
+                if (isTransientError && currentAttempt < times) {
+                    delay(delayMs.milliseconds)
+                } else {
+                    break
+                }
+            }
+        }
+        throw lastError ?: Exception("Unknown error during request retry")
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\network\TokenAuthenticator.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.network
+
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.runBlocking
+import okhttp3.Authenticator
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.Route
+import ua.kpi.transformermonitoringsystem.data.AuthApiService
+import ua.kpi.transformermonitoringsystem.data.model.RefreshRequest
+import ua.kpi.transformermonitoringsystem.database.AuthDataStore
+import javax.inject.Provider
+
+// Автоматичне оновлення сесії
+class TokenAuthenticator(
+    private val authDataStore: AuthDataStore,
+    private val authApiProvider: Provider<AuthApiService>
+) : Authenticator {
+
+    override fun authenticate(route: Route?, response: Response): Request? {
+        val path = response.request.url.encodedPath
+        if (path.endsWith("auth/refresh") || path.endsWith("auth/login") || path.endsWith("auth/register")) {
+            return null
+        }
+
+        if (responseCount(response) >= 2) {
+            return null
+        }
+
+        synchronized(this) {
+            val currentAccessToken = runBlocking { authDataStore.accessTokenFlow.firstOrNull() }
+            val requestToken = response.request.header("Authorization")?.removePrefix("Bearer ")?.trim()
+
+            if (!currentAccessToken.isNullOrBlank() && currentAccessToken != requestToken) {
+                return response.request.newBuilder()
+                    .header("Authorization", "Bearer $currentAccessToken")
+                    .build()
+            }
+
+            val refreshToken = runBlocking { authDataStore.refreshTokenFlow.firstOrNull() }
+            if (refreshToken.isNullOrBlank()) {
+                return null
+            }
+
+            return try {
+                val newTokens = runBlocking {
+                    authApiProvider.get().refreshTokens(RefreshRequest(refreshToken))
+                }
+                if (newTokens.accessToken.isBlank() || newTokens.refreshToken.isBlank()) {
+                    runBlocking { authDataStore.clearAuthData() }
+                    return null
+                }
+                runBlocking {
+                    val role = authDataStore.roleFlow.firstOrNull() ?: "USER"
+                    val login = authDataStore.loginFlow.firstOrNull() ?: ""
+                    authDataStore.saveAuthData(
+                        accessToken = newTokens.accessToken,
+                        refreshToken = newTokens.refreshToken,
+                        role = role,
+                        login = login
+                    )
+                }
+
+                response.request.newBuilder()
+                    .header("Authorization", "Bearer ${newTokens.accessToken}")
+                    .build()
+            } catch (_: Exception) {
+                runBlocking { authDataStore.clearAuthData() }
+                null
+            }
+        }
+    }
+
+    private fun responseCount(response: Response): Int {
+        var count = 1
+        var prior = response.priorResponse
+        while (prior != null) {
+            count++
+            prior = prior.priorResponse
+        }
+        return count
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\ui\AccountViewModel.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.ui
+
+import android.content.Context
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import ua.kpi.transformermonitoringsystem.data.TransformerRepository
+import ua.kpi.transformermonitoringsystem.data.model.AuthCredentials
+import ua.kpi.transformermonitoringsystem.data.model.UpdateUser
+import ua.kpi.transformermonitoringsystem.data.model.UserProfile
+import ua.kpi.transformermonitoringsystem.network.ErrorHandler
+import javax.inject.Inject
+
+sealed interface AuthUiState {
+    data object Initializing : AuthUiState
+    data object Unauthenticated : AuthUiState
+    data object Authenticated : AuthUiState
+}
+
+// ViewModel для управлыння акаунтом
+@HiltViewModel
+class AccountViewModel @Inject constructor(
+    private val repository: TransformerRepository,
+    @ApplicationContext context: Context
+) : ViewModel() {
+
+    private val appContext = context.applicationContext
+    val authState: StateFlow<AuthUiState> = repository.accessTokenFlow
+        .map { token ->
+            if (token.isNullOrBlank()) AuthUiState.Unauthenticated else AuthUiState.Authenticated
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = AuthUiState.Initializing
+        )
+
+    val userRole: StateFlow<String> = repository.roleFlow
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = "GUEST"
+        )
+
+    val username: StateFlow<String?> = repository.loginFlow
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = null
+        )
+
+    private val _userProfile = MutableStateFlow<UserProfile?>(null)
+    val userProfile: StateFlow<UserProfile?> = _userProfile.asStateFlow()
+
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    fun login(loginInput: String, passwordInput: String) {
+        val cleanLogin = loginInput.trim()
+        if (cleanLogin.isEmpty() || passwordInput.isEmpty()) {
+            _errorMessage.value = "Логін та пароль не можуть бути порожніми"
+            return
+        }
+
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            repository.login(AuthCredentials(login = cleanLogin, password = passwordInput))
+                .onSuccess {
+                    loadUserProfile()
+                }
+                .onFailure { e ->
+                    _errorMessage.value = ErrorHandler.handleException(appContext, e)
+                }
+            _isLoading.value = false
+        }
+    }
+
+    fun register(loginInput: String, passwordInput: String) {
+        val cleanLogin = loginInput.trim()
+        if (cleanLogin.length < 3) {
+            _errorMessage.value = "Логін має містити щонайменше 3 символи"
+            return
+        }
+        if (passwordInput.length < 6) {
+            _errorMessage.value = "Пароль повинен містити щонайменше 6 символів"
+            return
+        }
+
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            repository.register(AuthCredentials(login = cleanLogin, password = passwordInput))
+                .onSuccess {
+                    loadUserProfile()
+                }
+                .onFailure { e ->
+                    _errorMessage.value = ErrorHandler.handleException(appContext, e)
+                }
+            _isLoading.value = false
+        }
+    }
+
+    fun loadUserProfile() {
+        viewModelScope.launch {
+            repository.getCurrentUserProfile()
+                .onSuccess { profile ->
+                    _userProfile.value = profile
+                }
+        }
+    }
+
+    fun updateProfile(
+        currentPassword: String,
+        newLogin: String?,
+        newPassword: String?,
+        onSuccess: () -> Unit
+    ) {
+        val cleanLogin = newLogin?.trim()?.takeIf { it.isNotEmpty() }
+        val cleanPassword = newPassword?.takeIf { it.isNotEmpty() }
+
+        if (cleanLogin == null && cleanPassword == null) {
+            _errorMessage.value = "Вкажіть новий логін або новий пароль"
+            return
+        }
+        if (currentPassword.isBlank()) {
+            _errorMessage.value = "Введіть поточний пароль для підтвердження"
+            return
+        }
+        if (cleanPassword != null && cleanPassword.length < 6) {
+            _errorMessage.value = "Новий пароль повинен містити щонайменше 6 символів"
+            return
+        }
+
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            repository.updateProfile(
+                UpdateUser(
+                    currentPassword = currentPassword,
+                    login = cleanLogin,
+                    password = cleanPassword
+                )
+            ).onSuccess { updated ->
+                _userProfile.value = updated
+                onSuccess()
+            }.onFailure { e ->
+                _errorMessage.value = ErrorHandler.handleException(appContext, e)
+            }
+            _isLoading.value = false
+        }
+    }
+
+    fun changeRoleToAdmin(secretKey: String, onSuccess: () -> Unit) {
+        if (secretKey.isBlank()) {
+            _errorMessage.value = "Введіть секретний ключ адміністратора"
+            return
+        }
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            repository.changeRoleToAdmin(secretKey.trim())
+                .onSuccess {
+                    loadUserProfile()
+                    onSuccess()
+                }
+                .onFailure { e ->
+                    _errorMessage.value = ErrorHandler.handleException(appContext, e)
+                }
+            _isLoading.value = false
+        }
+    }
+
+    fun changeRoleToUser(onSuccess: () -> Unit = {}) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            repository.changeRoleToUser()
+                .onSuccess {
+                    loadUserProfile()
+                    onSuccess()
+                }
+                .onFailure { e ->
+                    _errorMessage.value = ErrorHandler.handleException(appContext, e)
+                }
+            _isLoading.value = false
+        }
+    }
+
+    fun logout() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            repository.logout()
+            _userProfile.value = null
+            _errorMessage.value = null
+            _isLoading.value = false
+        }
+    }
+
+    fun deleteAccount() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            repository.deleteProfile()
+                .onSuccess {
+                    _userProfile.value = null
+                }
+                .onFailure { e ->
+                    _errorMessage.value = ErrorHandler.handleException(appContext, e)
+                }
+            _isLoading.value = false
+        }
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\ui\TransformerViewModel.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.ui
+
+import android.content.Context
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import ua.kpi.transformermonitoringsystem.data.TransformerRepository
+import ua.kpi.transformermonitoringsystem.data.NetworkStats
+import ua.kpi.transformermonitoringsystem.database.entity.Transformer
+import ua.kpi.transformermonitoringsystem.database.entity.TransformerStatus
+import ua.kpi.transformermonitoringsystem.network.ErrorHandler
+
+/**
+ * ViewModel для керування станом моніторингу трансформаторів.
+ */
+@HiltViewModel
+class TransformerViewModel @Inject constructor(
+    private val repository: TransformerRepository,
+    @ApplicationContext context: Context,
+) : ViewModel() {
+
+    private val appContext = context.applicationContext
+
+    // Список трансформаторів після сортування та фільтрації
+    private val _transformers = MutableStateFlow<List<Transformer>>(emptyList())
+    val transformers: StateFlow<List<Transformer>> = _transformers.asStateFlow()
+
+    // Агрегована статистика мережі
+    private val _stats = MutableStateFlow<NetworkStats?>(null)
+    val stats: StateFlow<NetworkStats?> = _stats.asStateFlow()
+
+    // Стан помилки для інформування користувача в UI
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    // Стан завантаження (прогрес-бар)
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    // Стан успішного виконання форми або дії
+    private val _isSubmitted = MutableStateFlow(false)
+    val isSubmitted: StateFlow<Boolean> = _isSubmitted.asStateFlow()
+
+    // Пошуковий запит
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    // Порядок сортування (за зростанням чи спаданням)
+    private val _isAscending = MutableStateFlow(true)
+    val isAscending: StateFlow<Boolean> = _isAscending.asStateFlow()
+
+    // Обраний трансформатор та його ідентифікатор
+    private val _selectedTransformerId = MutableStateFlow<Int?>(null)
+    private val _selectedTransformer = MutableStateFlow<Transformer?>(null)
+    val selectedTransformer: StateFlow<Transformer?> = _selectedTransformer.asStateFlow()
+
+    // Історія статусів обраного трансформатора
+    private val _statuses = MutableStateFlow<List<TransformerStatus>>(emptyList())
+    val statuses: StateFlow<List<TransformerStatus>> = _statuses.asStateFlow()
+
+    // Середня температура та навантаження
+    private val _avgTemperature = MutableStateFlow(0.0)
+    val avgTemperature: StateFlow<Double> = _avgTemperature.asStateFlow()
+
+    private val _avgLoad = MutableStateFlow(0.0)
+    val avgLoad: StateFlow<Double> = _avgLoad.asStateFlow()
+
+    private var allTransformerEntities = emptyList<Transformer>()
+
+    private var loadDataJob: Job? = null
+    private var selectTransformerJob: Job? = null
+    private var loadStatusesJob: Job? = null
+
+    fun loadData(forceRefresh: Boolean = false) {
+        loadDataJob?.cancel()
+        loadDataJob = viewModelScope.launch {
+            val localData = if (!forceRefresh) {
+                repository.getAllTransformers(localOnly = true).getOrDefault(emptyList())
+            } else {
+                emptyList()
+            }
+
+            if (localData.isNotEmpty()) {
+                allTransformerEntities = localData
+                applyFilters()
+                _stats.value = repository.getNetworkStats(localData, localOnly = true).getOrNull()
+                _isLoading.value = false
+
+                launch {
+                    val result = repository.getAllTransformers(forceRefresh = true)
+                    result.onSuccess { freshData ->
+                        allTransformerEntities = freshData
+                        applyFilters()
+                        _stats.value = repository.getNetworkStats(freshData).getOrNull()
+                    }
+                }
+            } else {
+                _isLoading.value = true
+                val result = repository.getAllTransformers(forceRefresh = true)
+                result.onSuccess { data ->
+                    allTransformerEntities = data
+                    applyFilters()
+                    _stats.value = repository.getNetworkStats(data).getOrNull()
+                }.onFailure { error ->
+                    val fallbackData = repository.getAllTransformers(localOnly = true).getOrDefault(emptyList())
+                    if (fallbackData.isNotEmpty()) {
+                        allTransformerEntities = fallbackData
+                        applyFilters()
+                        _stats.value = repository.getNetworkStats(fallbackData, localOnly = true).getOrNull()
+                    } else {
+                        _errorMessage.value = ErrorHandler.handleException(appContext, error)
+                    }
+                }
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Встановлення пошукового рядка та застосування фільтрації.
+     */
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+        applyFilters()
+    }
+
+    /**
+     * Перемикання напрямку сортування за назвою.
+     */
+    fun toggleSortOrder() {
+        _isAscending.value = !_isAscending.value
+        applyFilters()
+    }
+
+    /**
+     * Фільтрація та сортування у пам'яті.
+     */
+    private fun applyFilters() {
+        var filtered = allTransformerEntities.filter {
+            it.name.contains(_searchQuery.value, ignoreCase = true) ||
+                    it.location.contains(_searchQuery.value, ignoreCase = true)
+        }
+        filtered = if (_isAscending.value) {
+            filtered.sortedBy { it.name }
+        } else {
+            filtered.sortedByDescending { it.name }
+        }
+        _transformers.value = filtered
+    }
+
+    /**
+     * Вибір трансформатора за ID та завантаження його телеметрії.
+     */
+    fun selectTransformer(id: Int) {
+        _errorMessage.value = null
+        _selectedTransformerId.value = id
+        _selectedTransformer.value = allTransformerEntities.find { it.id == id }
+
+        selectTransformerJob?.cancel()
+        selectTransformerJob = viewModelScope.launch {
+            if (_selectedTransformer.value == null) {
+                repository.getTransformerById(id, localOnly = true).onSuccess { cached ->
+                    _selectedTransformer.value = cached
+                }
+            }
+
+            repository.getTransformerById(id)
+                .onSuccess { fresh ->
+                    _selectedTransformer.value = fresh
+                }
+                .onFailure { e ->
+                    if (_selectedTransformer.value == null) {
+                        _errorMessage.value = ErrorHandler.handleException(appContext, e)
+                    }
+                }
+        }
+        loadStatuses(id)
+    }
+
+    /**
+     * Завантаження історії статусів та SQL-агрегованих показників.
+     */
+    fun loadStatuses(transformerId: Int) {
+        loadStatusesJob?.cancel()
+        loadStatusesJob = viewModelScope.launch {
+            val cachedStatuses = repository.getStatuses(transformerId, localOnly = true).getOrDefault(emptyList())
+            if (cachedStatuses.isNotEmpty()) {
+                _statuses.value = cachedStatuses
+                _avgTemperature.value = repository.getAverageTemperature(transformerId).getOrDefault(0.0)
+                _avgLoad.value = repository.getAverageLoad(transformerId).getOrDefault(0.0)
+            } else {
+                _statuses.value = emptyList()
+                val currentNode = _selectedTransformer.value
+                    ?: repository.getTransformerById(transformerId, localOnly = true).getOrNull()
+                _avgTemperature.value = currentNode?.temperature ?: 0.0
+                _avgLoad.value = currentNode?.currentLoad ?: 0.0
+            }
+
+            try {
+                repository.getStatuses(transformerId)
+                    .onSuccess { freshStatuses ->
+                        _statuses.value = freshStatuses
+                        if (freshStatuses.isNotEmpty()) {
+                            _avgTemperature.value = repository.getAverageTemperature(transformerId).getOrDefault(0.0)
+                            _avgLoad.value = repository.getAverageLoad(transformerId).getOrDefault(0.0)
+                        }
+                    }
+                    .onFailure { e ->
+                        if (cachedStatuses.isEmpty() && _selectedTransformer.value == null) {
+                            _errorMessage.value = ErrorHandler.handleException(appContext, e)
+                        }
+                    }
+            } catch (e: Exception) {
+                if (cachedStatuses.isEmpty() && _selectedTransformer.value == null) {
+                    _errorMessage.value = ErrorHandler.handleException(appContext, e)
+                }
+            }
+        }
+    }
+
+    /**
+     * Додавання нового трансформатора з валідацією полів та підтримкою maxLoad.
+     */
+    fun addTransformer(
+        name: String,
+        location: String,
+        voltageStr: String,
+        tempStr: String,
+        loadStr: String,
+        maxLoadStr: String = "100.0"
+    ) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            _isSubmitted.value = false
+
+            try {
+                if (name.trim().length < 3) throw Exception("Назва має містити мінімум 3 символи")
+                if (location.isBlank()) throw Exception("Локація не може бути порожньою")
+
+                val v = voltageStr.toDoubleOrNull() ?: throw Exception("Введіть коректну напругу (число)")
+                val t = tempStr.toDoubleOrNull() ?: throw Exception("Введіть коректну температуру (число)")
+                val l = loadStr.toDoubleOrNull() ?: throw Exception("Введіть коректне навантаження (число)")
+                val maxL = maxLoadStr.toDoubleOrNull() ?: throw Exception("Введіть коректне макс. навантаження (число)")
+
+                if (v <= 0) throw Exception("Напруга має бути більшою за 0 В")
+                if (t !in -50.0..150.0) throw Exception("Температура має бути в межах від -50 до 150 °C")
+                if (l < 0.0) throw Exception("Поточне навантаження не може бути від'ємним")
+                if (maxL <= 0.0) throw Exception("Максимальне навантаження має бути більшим за 0")
+
+                val transformer = Transformer(
+                    name = name.trim(),
+                    location = location.trim(),
+                    currentLoad = l,
+                    temperature = t,
+                    maxLoad = maxL
+                )
+                val status = TransformerStatus(voltage = v, temperature = t, load = l, transformerId = 0)
+
+                repository.insertTransformerWithData(transformer, listOf(status))
+                    .onSuccess {
+                        _isSubmitted.value = true
+                        loadData(forceRefresh = true)
+                    }
+                    .onFailure { throw it }
+            } catch (e: Exception) {
+                _errorMessage.value = ErrorHandler.handleException(appContext, e)
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Додавання нового статусу для обраного трансформатора.
+     */
+    fun addStatusForSelectedTransformer(voltageStr: String, tempStr: String, loadStr: String) {
+        val transformerId = _selectedTransformerId.value ?: return
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            try {
+                val v = voltageStr.toDoubleOrNull() ?: throw Exception("Введіть коректну напругу (число)")
+                val t = tempStr.toDoubleOrNull() ?: throw Exception("Введіть коректну температуру (число)")
+                val l = loadStr.toDoubleOrNull() ?: throw Exception("Введіть коректне навантаження (число)")
+
+                if (v <= 0) throw Exception("Напруга має бути більшою за 0 В")
+                if (t !in -50.0..150.0) throw Exception("Температура має бути в межах від -50 до 150 °C")
+                if (l < 0.0) throw Exception("Навантаження не може бути від'ємним")
+
+                val status = TransformerStatus(voltage = v, temperature = t, load = l, transformerId = transformerId)
+                repository.addStatus(status)
+                    .onSuccess {
+                        repository.getTransformerById(transformerId).onSuccess { updated ->
+                            _selectedTransformer.value = updated
+                        }
+                        loadStatuses(transformerId)
+                        loadData(forceRefresh = true)
+                        _isSubmitted.value = true
+                    }
+                    .onFailure { throw it }
+            } catch (e: Exception) {
+                _errorMessage.value = ErrorHandler.handleException(appContext, e)
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Видалення показника телеметрії.
+     */
+    fun deleteStatus(status: TransformerStatus) {
+        viewModelScope.launch {
+            repository.deleteStatus(status)
+                .onSuccess {
+                    val id = _selectedTransformerId.value ?: return@onSuccess
+                    loadStatuses(id)
+                }
+                .onFailure { e ->
+                    _errorMessage.value = ErrorHandler.handleException(appContext, e)
+                }
+        }
+    }
+
+    /**
+     * Оновлення обраного трансформатора з підтримкою maxLoad.
+     */
+    fun updateSelectedTransformer(name: String, location: String, maxLoadStr: String) {
+        val transformer = _selectedTransformer.value ?: return
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            _isSubmitted.value = false
+            try {
+                if (name.trim().length < 3) throw Exception("Назва має містити мінімум 3 символи")
+                if (location.isBlank()) throw Exception("Локація не може бути порожньою")
+                val maxL = maxLoadStr.toDoubleOrNull() ?: throw Exception("Введіть коректне макс. навантаження")
+                if (maxL <= 0.0) throw Exception("Максимальне навантаження має бути більшим за 0")
+
+                val updatedTransformer = transformer.copy(
+                    name = name.trim(),
+                    location = location.trim(),
+                    maxLoad = maxL
+                )
+                repository.updateTransformer(updatedTransformer)
+                    .onSuccess { saved ->
+                        _selectedTransformer.value = saved
+                        _isSubmitted.value = true
+                        loadData(forceRefresh = true)
+                    }
+                    .onFailure { throw it }
+            } catch (e: Exception) {
+                _errorMessage.value = ErrorHandler.handleException(appContext, e)
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Видалення обраного трансформатора.
+     */
+    fun deleteSelectedTransformer() {
+        val transformer = _selectedTransformer.value ?: return
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            try {
+                repository.deleteTransformer(transformer)
+                loadData(forceRefresh = true)
+                _isSubmitted.value = true
+            } catch (e: Exception) {
+                _errorMessage.value = ErrorHandler.handleException(appContext, e)
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun resetSubmitState() { _isSubmitted.value = false }
+    fun clearError() { _errorMessage.value = null }
+}
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\ui\components\FormTextField.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.ui.components
+
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+
+// Пере-використовуваний компонент поля вводу з підтримкою валідації та підказок
+@Composable
+fun FormTextField(
+    label: String,
+    value: String,
+    isError: Boolean,
+    helperText: String,
+    onValueChange: (String) -> Unit
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        isError = isError,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        supportingText = {
+            if (isError) {
+                Text(
+                    text = "Некоректний ввід",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            } else {
+                Text(
+                    text = helperText,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    )
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\ui\navigation\NavScreen.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.ui.navigation
+
+sealed class NavScreen(val route: String) {
+    object List : NavScreen("transformer_list")
+    object Form : NavScreen("transformer_form")
+    object Details : NavScreen("transformer_details/{transformerId}") {
+        fun createRoute(transformerId: Int) = "transformer_details/$transformerId"
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\ui\screens\AuthScreen.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.ui.screens
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.dp
+import ua.kpi.transformermonitoringsystem.ui.AccountViewModel
+
+@Composable
+fun AuthScreen(
+    accountViewModel: AccountViewModel,
+    modifier: Modifier = Modifier
+) {
+    val isLoading by accountViewModel.isLoading.collectAsState()
+    val errorMessage by accountViewModel.errorMessage.collectAsState()
+
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
+    var loginInput by remember { mutableStateOf("") }
+    var passwordInput by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(selectedTabIndex) {
+        accountViewModel.clearError()
+        passwordVisible = false
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .systemBarsPadding()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 440.dp)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Surface(
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(64.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Bolt,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Моніторинг трансформаторів",
+                style = MaterialTheme.typography.headlineSmall
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    PrimaryTabRow(
+                        selectedTabIndex = selectedTabIndex,
+                        containerColor = Color.Transparent
+                    ) {
+                        Tab(
+                            selected = selectedTabIndex == 0,
+                            onClick = { selectedTabIndex = 0 },
+                            text = { Text("Вхід") }
+                        )
+                        Tab(
+                            selected = selectedTabIndex == 1,
+                            onClick = { selectedTabIndex = 1 },
+                            text = { Text("Реєстрація") }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    OutlinedTextField(
+                        value = loginInput,
+                        onValueChange = {
+                            loginInput = it
+                            accountViewModel.clearError()
+                        },
+                        label = { Text(if (selectedTabIndex == 0) "Логін" else "Логін (мін. 3 символи)") },
+                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                        singleLine = true,
+                        enabled = !isLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = passwordInput,
+                        onValueChange = {
+                            passwordInput = it
+                            accountViewModel.clearError()
+                        },
+                        label = { Text(if (selectedTabIndex == 0) "Пароль" else "Пароль (мін. 6 символів)") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        trailingIcon = {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (passwordVisible) "Приховати пароль" else "Показати пароль"
+                                )
+                            }
+                        },
+                        singleLine = true,
+                        enabled = !isLoading,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (errorMessage != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = errorMessage!!,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Button(
+                        onClick = {
+                            if (selectedTabIndex == 0) {
+                                accountViewModel.login(loginInput, passwordInput)
+                            } else {
+                                accountViewModel.register(loginInput, passwordInput)
+                            }
+                        },
+                        enabled = !isLoading,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        } else {
+                            Text(if (selectedTabIndex == 0) "Увійти" else "Зареєструватися")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\ui\screens\LogsScreen.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.ui.screens
+
+import android.widget.Toast
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+
+/**
+ * Екран перегляду та очищення журналу логів помилок.
+ */
+@Composable
+fun LogsScreen(
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var errorLogsText by remember { mutableStateOf("") }
+
+    fun loadErrorLogs() {
+        scope.launch(Dispatchers.IO) {
+            val file = File(context.filesDir, "error_log.txt")
+            val content = if (file.exists()) {
+                val lines = file.readLines().takeLast(50).reversed()
+                if (lines.isEmpty()) "Журнал помилок порожній" else lines.joinToString("\n")
+            } else {
+                "Файл error_log.txt ще не створено"
+            }
+            withContext(Dispatchers.Main) {
+                errorLogsText = content
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        loadErrorLogs()
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Card(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.BugReport, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Журнал помилок (error_log.txt)", style = MaterialTheme.typography.titleMedium)
+                    }
+                    IconButton(onClick = { loadErrorLogs() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Оновити лог")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    Text(
+                        text = errorLogsText,
+                        modifier = Modifier
+                            .padding(12.dp)
+                            .verticalScroll(rememberScrollState()),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        scope.launch(Dispatchers.IO) {
+                            File(context.filesDir, "error_log.txt").delete()
+                            loadErrorLogs()
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(context, "Лог очищено", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("Очистити лог")
+                }
+            }
+        }
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\ui\screens\TransformerDetailsScreen.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.ui.screens
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavHostController
+import ua.kpi.transformermonitoringsystem.ui.AccountViewModel
+import ua.kpi.transformermonitoringsystem.ui.TransformerViewModel
+import java.util.Locale
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TransformerDetailsScreen(
+    transformerId: Int,
+    navController: NavHostController,
+    viewModel: TransformerViewModel,
+    accountViewModel: AccountViewModel
+) {
+    val statuses by viewModel.statuses.collectAsState()
+    val avgTemp by viewModel.avgTemperature.collectAsState()
+    val avgLoad by viewModel.avgLoad.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val isSubmitted by viewModel.isSubmitted.collectAsState()
+    val selectedTransformer by viewModel.selectedTransformer.collectAsState()
+    val userRole by accountViewModel.userRole.collectAsState()
+
+    LaunchedEffect(transformerId) {
+        viewModel.selectTransformer(transformerId)
+    }
+
+    var showAddDialog by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var isMenuExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isSubmitted) {
+        if (isSubmitted) {
+            if (showDeleteDialog) {
+                showDeleteDialog = false
+                viewModel.resetSubmitState()
+                navController.popBackStack()
+            } else if (showEditDialog) {
+                showEditDialog = false
+                viewModel.resetSubmitState()
+            } else if (showAddDialog) {
+                showAddDialog = false
+                viewModel.resetSubmitState()
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            Column {
+                TopAppBar(
+                    title = { Text(selectedTransformer?.name ?: "Деталі трансформатора") },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                        }
+                    },
+                    actions = {
+                        if (userRole == "ADMIN") {
+                            IconButton(onClick = { showAddDialog = true }) {
+                                Icon(Icons.Default.Add, contentDescription = "Додати статус")
+                            }
+                            Box {
+                                IconButton(onClick = { isMenuExpanded = true }) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "Меню")
+                                }
+                                DropdownMenu(
+                                    expanded = isMenuExpanded,
+                                    onDismissRequest = { isMenuExpanded = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Редагувати") },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            showEditDialog = true
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Видалити", color = MaterialTheme.colorScheme.error) },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            showDeleteDialog = true
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        actionIconContentColor = MaterialTheme.colorScheme.onSurface,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                    thickness = 1.dp
+                )
+            }
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            selectedTransformer?.let { transformer ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Характеристики вузла", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Локація: ${transformer.location}")
+                        Text("Поточна температура: ${transformer.temperature} °C")
+                        Text("Навантаження: ${transformer.currentLoad} / ${transformer.maxLoad} %")
+                    }
+                }
+            }
+
+            if (errorMessage != null) {
+                Text(text = "Помилка: $errorMessage", color = MaterialTheme.colorScheme.error)
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Агреговані показники телеметрії", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Середня температура: ${String.format(Locale.US, "%.1f", avgTemp)} °C")
+                    Text("Середнє навантаження: ${String.format(Locale.US, "%.1f", avgLoad)} %")
+                }
+            }
+
+            Text("Історія показників телеметрії", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (isLoading && statuses.isEmpty()) {
+                CircularProgressIndicator()
+            } else if (statuses.isEmpty()) {
+                Text("Немає збережених показників", style = MaterialTheme.typography.bodyLarge)
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(statuses, key = { it.id }) { status ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text("Напруга: ${status.voltage} В")
+                                    Text("Температура: ${status.temperature} °C")
+                                    Text("Навантаження: ${status.load} %")
+                                }
+                                if (userRole == "ADMIN") {
+                                    IconButton(onClick = { viewModel.deleteStatus(status) }) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = "Видалити статус",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddDialog && userRole == "ADMIN") {
+        var voltage by remember { mutableStateOf("") }
+        var temp by remember { mutableStateOf("") }
+        var load by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = {
+                showAddDialog = false
+                viewModel.clearError()
+            },
+            title = { Text("Новий показник телеметрії") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (errorMessage != null) {
+                        Text(text = errorMessage!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                    OutlinedTextField(value = voltage, onValueChange = { voltage = it }, label = { Text("Напруга (В)") })
+                    OutlinedTextField(value = temp, onValueChange = { temp = it }, label = { Text("Температура (°C)") })
+                    OutlinedTextField(value = load, onValueChange = { load = it }, label = { Text("Навантаження (%)") })
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.resetSubmitState()
+                    viewModel.addStatusForSelectedTransformer(voltage, temp, load)
+                }) {
+                    Text("Додати")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showAddDialog = false
+                    viewModel.clearError()
+                }) {
+                    Text("Скасувати")
+                }
+            }
+        )
+    }
+
+    if (showEditDialog && selectedTransformer != null && userRole == "ADMIN") {
+        val currentTransformer = selectedTransformer!!
+        var editName by remember(currentTransformer) { mutableStateOf(currentTransformer.name) }
+        var editLocation by remember(currentTransformer) { mutableStateOf(currentTransformer.location) }
+        var editMaxLoad by remember(currentTransformer) { mutableStateOf(currentTransformer.maxLoad.toString()) }
+
+        AlertDialog(
+            onDismissRequest = {
+                showEditDialog = false
+                viewModel.clearError()
+            },
+            title = { Text("Редагувати трансформатор") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (errorMessage != null) {
+                        Text(text = errorMessage!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                    OutlinedTextField(value = editName, onValueChange = { editName = it }, label = { Text("Назва") })
+                    OutlinedTextField(value = editLocation, onValueChange = { editLocation = it }, label = { Text("Локація") })
+                    OutlinedTextField(value = editMaxLoad, onValueChange = { editMaxLoad = it }, label = { Text("Макс. навантаження (%)") })
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.updateSelectedTransformer(editName, editLocation, editMaxLoad)
+                }) {
+                    Text("Зберегти")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showEditDialog = false
+                    viewModel.clearError()
+                }) {
+                    Text("Скасувати")
+                }
+            }
+        )
+    }
+
+    if (showDeleteDialog && userRole == "ADMIN") {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Видалити трансформатор?") },
+            text = { Text("Цю дію неможливо скасувати. Всі статуси трансформатора також будуть видалені.") },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.deleteSelectedTransformer() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Видалити")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Скасувати")
+                }
+            }
+        )
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\ui\screens\TransformerFormScreen.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.ui.screens
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavHostController
+import ua.kpi.transformermonitoringsystem.ui.TransformerViewModel
+import ua.kpi.transformermonitoringsystem.ui.components.FormTextField
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TransformerFormScreen(navController: NavHostController, viewModel: TransformerViewModel) {
+    var name by remember { mutableStateOf("") }
+    var location by remember { mutableStateOf("") }
+    var voltage by remember { mutableStateOf("") }
+    var temp by remember { mutableStateOf("") }
+    var load by remember { mutableStateOf("") }
+    var maxLoad by remember { mutableStateOf("100.0") }
+
+    var nameError by remember { mutableStateOf(false) }
+    var locationError by remember { mutableStateOf(false) }
+    var voltageError by remember { mutableStateOf(false) }
+    var tempError by remember { mutableStateOf(false) }
+    var loadError by remember { mutableStateOf(false) }
+    var maxLoadError by remember { mutableStateOf(false) }
+
+    val isLoading by viewModel.isLoading.collectAsState()
+    val isSubmitted by viewModel.isSubmitted.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
+
+    LaunchedEffect(isSubmitted) {
+        if (isSubmitted) {
+            navController.popBackStack()
+            viewModel.resetSubmitState()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { viewModel.clearError() }
+    }
+
+    Scaffold(
+        topBar = {
+            Column {
+                TopAppBar(
+                    title = { Text("Новий трансформатор") },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        actionIconContentColor = MaterialTheme.colorScheme.onSurface,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                    thickness = 1.dp
+                )
+            }
+        }
+    ) { padding ->
+        BoxWithConstraints(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+        ) {
+            val isWide = maxWidth > 600.dp
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                if (isWide) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            FormTextField("Назва", name, nameError, "Мін. 3 символи") {
+                                name = it; nameError = false; viewModel.clearError()
+                            }
+                            FormTextField("Локація", location, locationError, "Наприклад: Київ, вул. Енергетиків") {
+                                location = it; locationError = false; viewModel.clearError()
+                            }
+                            FormTextField("Макс. навантаження (%)", maxLoad, maxLoadError, "Більше 0 (за замовчуванням 100)") {
+                                maxLoad = it; maxLoadError = false; viewModel.clearError()
+                            }
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            FormTextField("Початкова напруга (В)", voltage, voltageError, "Більше 0 (наприклад: 220)") {
+                                voltage = it; voltageError = false; viewModel.clearError()
+                            }
+                            FormTextField("Температура (°C)", temp, tempError, "Від -50 до 150") {
+                                temp = it; tempError = false; viewModel.clearError()
+                            }
+                            FormTextField("Поточне навантаження (%)", load, loadError, "Від 0 і вище") {
+                                load = it; loadError = false; viewModel.clearError()
+                            }
+                        }
+                    }
+                } else {
+                    FormTextField("Назва", name, nameError, "Мін. 3 символи") {
+                        name = it; nameError = false; viewModel.clearError()
+                    }
+                    FormTextField("Локація", location, locationError, "Наприклад: Київ, вул. Енергетиків") {
+                        location = it; locationError = false; viewModel.clearError()
+                    }
+                    FormTextField("Макс. навантаження (%)", maxLoad, maxLoadError, "Більше 0 (за замовчуванням 100)") {
+                        maxLoad = it; maxLoadError = false; viewModel.clearError()
+                    }
+                    FormTextField("Початкова напруга (В)", voltage, voltageError, "Більше 0 (наприклад: 220)") {
+                        voltage = it; voltageError = false; viewModel.clearError()
+                    }
+                    FormTextField("Температура (°C)", temp, tempError, "Від -50 до 150") {
+                        temp = it; tempError = false; viewModel.clearError()
+                    }
+                    FormTextField("Поточне навантаження (%)", load, loadError, "Від 0 і вище") {
+                        load = it; loadError = false; viewModel.clearError()
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (isLoading) {
+                    CircularProgressIndicator()
+                } else {
+                    Button(
+                        onClick = {
+                            nameError = name.trim().length < 3
+                            locationError = location.isBlank()
+                            maxLoadError = maxLoad.toDoubleOrNull()?.let { it <= 0.0 } ?: true
+                            voltageError = voltage.toDoubleOrNull()?.let { it <= 0.0 } ?: true
+                            tempError = temp.toDoubleOrNull()?.let { it !in -50.0..150.0 } ?: true
+                            loadError = load.toDoubleOrNull()?.let { it < 0.0 } ?: true
+
+                            if (!nameError && !locationError && !maxLoadError && !voltageError && !tempError && !loadError) {
+                                viewModel.addTransformer(name, location, voltage, temp, load, maxLoad)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Зберегти")
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\ui\screens\TransformersScreen.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.ui.screens
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import ua.kpi.transformermonitoringsystem.ui.AccountViewModel
+import ua.kpi.transformermonitoringsystem.ui.TransformerViewModel
+import java.util.Locale
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TransformersScreen(
+    viewModel: TransformerViewModel,
+    accountViewModel: AccountViewModel,
+    onNavigateToForm: () -> Unit,
+    onNavigateToDetails: (Int) -> Unit = {}
+) {
+    val transformers by viewModel.transformers.collectAsState()
+    val stats by viewModel.stats.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    val isAscending by viewModel.isAscending.collectAsState()
+
+    val userRole by accountViewModel.userRole.collectAsState()
+    val username by accountViewModel.username.collectAsState()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    var selectedTabItem by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(Unit) {
+        viewModel.loadData()
+        accountViewModel.loadUserProfile()
+    }
+
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
+
+    val topBarTitle = when (selectedTabItem) {
+        1 -> "Логи"
+        2 -> "Профіль користувача"
+        else -> "Трансфори"
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            Column {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = topBarTitle,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    },
+                    actions = {
+                        Surface(
+                            onClick = { selectedTabItem = 2 },
+                            shape = MaterialTheme.shapes.small,
+                            color = if (userRole == "ADMIN") {
+                                MaterialTheme.colorScheme.errorContainer
+                            } else {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            },
+                            modifier = Modifier.padding(end = 4.dp)
+                        ) {
+                            Text(
+                                text = userRole,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (userRole == "ADMIN") {
+                                    MaterialTheme.colorScheme.onErrorContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                },
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                        IconButton(onClick = { accountViewModel.logout() }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Logout,
+                                contentDescription = "Вийти з системи"
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        actionIconContentColor = MaterialTheme.colorScheme.onSurface,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                    thickness = 1.dp
+                )
+            }
+        },
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    selected = selectedTabItem == 0,
+                    onClick = { selectedTabItem = 0 },
+                    icon = { Icon(Icons.Default.Bolt, contentDescription = null) },
+                    label = { Text("Трансфори") }
+                )
+                NavigationBarItem(
+                    selected = selectedTabItem == 1,
+                    onClick = { selectedTabItem = 1 },
+                    icon = { Icon(Icons.Default.Analytics, contentDescription = null) },
+                    label = { Text("Логи") }
+                )
+                NavigationBarItem(
+                    selected = selectedTabItem == 2,
+                    onClick = { selectedTabItem = 2 },
+                    icon = { Icon(Icons.Default.Person, contentDescription = null) },
+                    label = { Text(username ?: "Профіль") }
+                )
+            }
+        },
+        floatingActionButton = {
+            if (selectedTabItem == 0 && userRole == "ADMIN") {
+                FloatingActionButton(onClick = onNavigateToForm) {
+                    Icon(Icons.Default.Add, contentDescription = "Додати трансформатор")
+                }
+            }
+        }
+    ) { padding ->
+        Box(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+        ) {
+            when (selectedTabItem) {
+                1 -> LogsScreen()
+                2 -> UserProfileScreen(accountViewModel = accountViewModel)
+                else -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .animateContentSize()
+                    ) {
+                        AnimatedVisibility(
+                            visible = stats != null,
+                            enter = fadeIn(),
+                            exit = fadeOut()
+                        ) {
+                            stats?.let {
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                                    )
+                                ) {
+                                    Column(modifier = Modifier.padding(16.dp)) {
+                                        Text("Статистика", style = MaterialTheme.typography.titleMedium)
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text("Середнє навантаження: ${String.format(Locale.US, "%.2f", it.averageLoad)} %")
+                                        Text("Середня температура: ${String.format(Locale.US, "%.2f", it.averageTemperature)} °C")
+                                        Text(
+                                            text = "Критичних вузлів: ${it.criticalCount}",
+                                            color = if (it.criticalCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSecondaryContainer
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { viewModel.setSearchQuery(it) },
+                                label = { Text("Пошук за назвою чи локацією") },
+                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilledTonalButton(onClick = { viewModel.toggleSortOrder() }) {
+                                Text(if (isAscending) "А-Я" else "Я-А")
+                            }
+                            IconButton(onClick = { viewModel.loadData(forceRefresh = true) }) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Оновити")
+                            }
+                        }
+
+                        if (isLoading) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
+                            }
+                        }
+
+                        if (transformers.isEmpty() && !isLoading) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("Немає даних трансформаторів", style = MaterialTheme.typography.bodyLarge)
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(bottom = 80.dp)
+                            ) {
+                                items(transformers, key = { it.id }) { transformer ->
+                                    val isCritical = transformer.temperature > 85.0 ||
+                                        transformer.currentLoad > (transformer.maxLoad * 0.9)
+                                    val loadRatio = if (transformer.maxLoad > 0) {
+                                        (transformer.currentLoad / transformer.maxLoad).toFloat().coerceIn(0f, 1f)
+                                    } else {
+                                        0f
+                                    }
+
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                                            .clickable { onNavigateToDetails(transformer.id) },
+                                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                                    ) {
+                                        Column(modifier = Modifier.padding(16.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = transformer.name,
+                                                    style = MaterialTheme.typography.titleMedium
+                                                )
+                                                Badge(
+                                                    containerColor = if (isCritical) {
+                                                        MaterialTheme.colorScheme.errorContainer
+                                                    } else {
+                                                        MaterialTheme.colorScheme.primaryContainer
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = if (isCritical) "КРИТИЧНИЙ" else "НОРМА",
+                                                        color = if (isCritical) {
+                                                            MaterialTheme.colorScheme.onErrorContainer
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onPrimaryContainer
+                                                        },
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = "Локація: ${transformer.location}",
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                            Text(
+                                                text = "Температура: ${transformer.temperature} °C",
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                            Text(
+                                                text = "Навантаження: ${transformer.currentLoad} / ${transformer.maxLoad} %",
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            LinearProgressIndicator(
+                                                progress = { loadRatio },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                color = if (isCritical) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\ui\screens\UserProfileScreen.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.ui.screens
+
+import android.widget.Toast
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import ua.kpi.transformermonitoringsystem.ui.AccountViewModel
+
+@Composable
+fun UserProfileScreen(
+    accountViewModel: AccountViewModel,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val userRole by accountViewModel.userRole.collectAsState()
+    val username by accountViewModel.username.collectAsState()
+    val userProfile by accountViewModel.userProfile.collectAsState()
+    val isLoading by accountViewModel.isLoading.collectAsState()
+    val errorMessage by accountViewModel.errorMessage.collectAsState()
+
+    var showAdminKeyDialog by remember { mutableStateOf(false) }
+    var adminKeyInput by remember { mutableStateOf("") }
+
+    var showEditProfileDialog by remember { mutableStateOf(false) }
+    var currentPasswordInput by remember { mutableStateOf("") }
+    var newLoginInput by remember { mutableStateOf("") }
+    var newPasswordInput by remember { mutableStateOf("") }
+
+    var showDeleteAccountDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        accountViewModel.loadUserProfile()
+    }
+
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            accountViewModel.clearError()
+        }
+    }
+
+    val formattedCreatedAt = remember(userProfile?.createdAt) {
+        userProfile?.createdAt?.toString()?.replace("T", " ")?.substringBefore(".")
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Картка профілю користувача (UserProfile)
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Person, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = userProfile?.login ?: username ?: "Користувач",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                    }
+                    Badge(
+                        containerColor = if (userRole == "ADMIN") {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        }
+                    ) {
+                        Text(
+                            text = userRole,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
+                userProfile?.let { _ ->
+                    if (formattedCreatedAt != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Дата реєстрації: $formattedCreatedAt",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+        }
+
+        // Налаштування акаунту та ролі
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Керування акаунтом та правами", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        newLoginInput = userProfile?.login ?: username.orEmpty()
+                        currentPasswordInput = ""
+                        newPasswordInput = ""
+                        showEditProfileDialog = true
+                    },
+                    enabled = !isLoading,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Редагувати логін або пароль")
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (userRole != "ADMIN") {
+                    OutlinedButton(
+                        onClick = {
+                            adminKeyInput = ""
+                            showAdminKeyDialog = true
+                        },
+                        enabled = !isLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.AdminPanelSettings, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Отримати права ADMIN за ключем")
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = {
+                            accountViewModel.changeRoleToUser {
+                                Toast.makeText(context, "Роль змінено на USER", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        enabled = !isLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Перейти до ролі USER")
+                    }
+                }
+            }
+        }
+
+        // Вихід та видалення акаунту
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Сесія", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Button(
+                    onClick = { accountViewModel.logout() },
+                    enabled = !isLoading,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Вийти з системи")
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = { showDeleteAccountDialog = true },
+                    enabled = !isLoading,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.DeleteForever, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Видалити акаунт")
+                }
+            }
+        }
+    }
+
+    // Діалог отримання прав ADMIN
+    if (showAdminKeyDialog) {
+        AlertDialog(
+            onDismissRequest = { showAdminKeyDialog = false },
+            title = { Text("Підвищення ролі до ADMIN") },
+            text = {
+                Column {
+                    Text("Введіть одноразовий секретний ключ адміністратора:")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = adminKeyInput,
+                        onValueChange = { adminKeyInput = it },
+                        label = { Text("Секретний ключ") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        accountViewModel.changeRoleToAdmin(adminKeyInput) {
+                            showAdminKeyDialog = false
+                            Toast.makeText(context, "Права ADMIN активовано", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text("Підтвердити")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAdminKeyDialog = false }) {
+                    Text("Скасувати")
+                }
+            }
+        )
+    }
+
+    // Діалог оновлення профілю (PUT /users/profile)
+    if (showEditProfileDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditProfileDialog = false },
+            title = { Text("Оновлення профілю") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = currentPasswordInput,
+                        onValueChange = { currentPasswordInput = it },
+                        label = { Text("Поточний пароль *") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = newLoginInput,
+                        onValueChange = { newLoginInput = it },
+                        label = { Text("Новий логін (необов'язково)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = newPasswordInput,
+                        onValueChange = { newPasswordInput = it },
+                        label = { Text("Новий пароль (мін. 6 символів)") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        accountViewModel.updateProfile(
+                            currentPassword = currentPasswordInput,
+                            newLogin = newLoginInput,
+                            newPassword = newPasswordInput
+                        ) {
+                            showEditProfileDialog = false
+                            Toast.makeText(context, "Профіль оновлено", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text("Зберегти")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditProfileDialog = false }) {
+                    Text("Скасувати")
+                }
+            }
+        )
+    }
+
+    // Діалог видалення акаунту (DELETE /users/profile)
+    if (showDeleteAccountDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAccountDialog = false },
+            title = { Text("Видалити акаунт?") },
+            text = { Text("Акаунт буде видалено безповоротно, а сесію завершено.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteAccountDialog = false
+                        accountViewModel.deleteAccount()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Видалити")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAccountDialog = false }) {
+                    Text("Скасувати")
+                }
+            }
+        )
+    }
+}
+
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\ui\theme\Color.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+val Purple80 = Color(0xFFD0BCFF)
+val PurpleGrey80 = Color(0xFFCCC2DC)
+val Pink80 = Color(0xFFEFB8C8)
+
+val Purple40 = Color(0xFF6650a4)
+val PurpleGrey40 = Color(0xFF625b71)
+val Pink40 = Color(0xFF7D5260)
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\ui\theme\Theme.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.ui.theme
+
+import android.os.Build
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
+
+private val DarkColorScheme = darkColorScheme(
+    primary = Purple80,
+    secondary = PurpleGrey80,
+    tertiary = Pink80
+)
+
+private val LightColorScheme = lightColorScheme(
+    primary = Purple40,
+    secondary = PurpleGrey40,
+    tertiary = Pink40
+
+    /* Other default colors to override
+    background = Color(0xFFFFFBFE),
+    surface = Color(0xFFFFFBFE),
+    onPrimary = Color.White,
+    onSecondary = Color.White,
+    onTertiary = Color.White,
+    onBackground = Color(0xFF1C1B1F),
+    onSurface = Color(0xFF1C1B1F),
+    */
+)
+
+@Composable
+fun TransformerMonitoringSystemTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    // Dynamic color is available on Android 12+
+    dynamicColor: Boolean = true,
+    content: @Composable () -> Unit
+) {
+    val colorScheme = when {
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            val context = LocalContext.current
+            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        }
+
+        darkTheme -> DarkColorScheme
+        else -> LightColorScheme
+    }
+
+    MaterialTheme(
+        colorScheme = colorScheme,
+        typography = Typography,
+        content = content
+    )
+}
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\ui\theme\Type.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.ui.theme
+
+import androidx.compose.material3.Typography
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+
+// Set of Material typography styles to start with
+val Typography = Typography(
+    bodyLarge = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.5.sp
+    )
+    /* Other default text styles to override
+    titleLarge = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 22.sp,
+        lineHeight = 28.sp,
+        letterSpacing = 0.sp
+    ),
+    labelSmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Medium,
+        fontSize = 11.sp,
+        lineHeight = 16.sp,
+        letterSpacing = 0.5.sp
+    )
+    */
+)
+
+================================================================================
+FILE: app\src\main\java\ua\kpi\transformermonitoringsystem\util\TransformerMappers.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.util
+
+import ua.kpi.transformermonitoringsystem.database.entity.Transformer as TransformerEntity
+import ua.kpi.transformermonitoringsystem.database.entity.TransformerStatus as TransformerStatusEntity
+import ua.kpi.transformermonitoringsystem.data.model.Transformer as TransformerDto
+import ua.kpi.transformermonitoringsystem.data.model.TransformerStatus as TransformerStatusDto
+
+// ------------------------------------------------------------------
+// Функції перетворення (Mappers) між DTO сервера та Room Entity
+// ------------------------------------------------------------------
+fun TransformerDto.toEntity() = TransformerEntity(
+    id = id,
+    name = name,
+    location = location,
+    currentLoad = currentLoad,
+    temperature = temperature,
+    maxLoad = maxLoad
+)
+
+fun TransformerEntity.toDto() = TransformerDto(
+    id = id,
+    name = name,
+    location = location,
+    currentLoad = currentLoad,
+    temperature = temperature,
+    maxLoad = maxLoad
+)
+
+fun TransformerStatusDto.toEntity() = TransformerStatusEntity(
+    id = id,
+    transformerId = transformerId,
+    voltage = voltage,
+    temperature = temperature,
+    load = load
+)
+
+fun TransformerStatusEntity.toDto() = TransformerStatusDto(
+    id = id,
+    transformerId = transformerId,
+    voltage = voltage,
+    temperature = temperature,
+    load = load
+)
+
+
+================================================================================
+FILE: app\src\main\res\drawable\ic_launcher_background.xml
+================================================================================
+
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#3DDC84"
+        android:pathData="M0,0h108v108h-108z" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M9,0L9,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M19,0L19,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M29,0L29,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M39,0L39,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M49,0L49,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M59,0L59,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M69,0L69,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M79,0L79,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M89,0L89,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M99,0L99,108"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,9L108,9"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,19L108,19"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,29L108,29"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,39L108,39"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,49L108,49"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,59L108,59"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,69L108,69"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,79L108,79"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,89L108,89"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,99L108,99"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M19,29L89,29"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M19,39L89,39"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M19,49L89,49"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M19,59L89,59"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M19,69L89,69"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M19,79L89,79"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M29,19L29,89"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M39,19L39,89"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M49,19L49,89"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M59,19L59,89"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M69,19L69,89"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M79,19L79,89"
+        android:strokeWidth="0.8"
+        android:strokeColor="#33FFFFFF" />
+</vector>
+
+
+================================================================================
+FILE: app\src\main\res\drawable\ic_launcher_foreground.xml
+================================================================================
+
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M31,63.928c0,0 6.4,-11 12.1,-13.1c7.2,-2.6 26,-1.4 26,-1.4l38.1,38.1L107,108.928l-32,-1L31,63.928z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="85.84757"
+                android:endY="92.4963"
+                android:startX="42.9492"
+                android:startY="49.59793"
+                android:type="linear">
+                <item
+                    android:color="#44000000"
+                    android:offset="0.0" />
+                <item
+                    android:color="#00000000"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillType="nonZero"
+        android:pathData="M65.3,45.828l3.8,-6.6c0.2,-0.4 0.1,-0.9 -0.3,-1.1c-0.4,-0.2 -0.9,-0.1 -1.1,0.3l-3.9,6.7c-6.3,-2.8 -13.4,-2.8 -19.7,0l-3.9,-6.7c-0.2,-0.4 -0.7,-0.5 -1.1,-0.3C38.8,38.328 38.7,38.828 38.9,39.228l3.8,6.6C36.2,49.428 31.7,56.028 31,63.928h46C76.3,56.028 71.8,49.428 65.3,45.828zM43.4,57.328c-0.8,0 -1.5,-0.5 -1.8,-1.2c-0.3,-0.7 -0.1,-1.5 0.4,-2.1c0.5,-0.5 1.4,-0.7 2.1,-0.4c0.7,0.3 1.2,1 1.2,1.8C45.3,56.528 44.5,57.328 43.4,57.328L43.4,57.328zM64.6,57.328c-0.8,0 -1.5,-0.5 -1.8,-1.2s-0.1,-1.5 0.4,-2.1c0.5,-0.5 1.4,-0.7 2.1,-0.4c0.7,0.3 1.2,1 1.2,1.8C66.5,56.528 65.6,57.328 64.6,57.328L64.6,57.328z"
+        android:strokeWidth="1"
+        android:strokeColor="#00000000" />
+</vector>
+
+================================================================================
+FILE: app\src\main\res\mipmap-anydpi-v26\ic_launcher.xml
+================================================================================
+
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>
+
+================================================================================
+FILE: app\src\main\res\mipmap-anydpi-v26\ic_launcher_round.xml
+================================================================================
+
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>
+
+================================================================================
+FILE: app\src\main\res\values-night\themes.xml
+================================================================================
+
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.TransformerMonitoringSystem" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+        <!-- Primary brand color. -->
+        <item name="colorPrimary">@color/purple_200</item>
+        <item name="colorPrimaryVariant">@color/purple_700</item>
+        <item name="colorOnPrimary">@color/black</item>
+        <!-- Secondary brand color. -->
+        <item name="colorSecondary">@color/teal_200</item>
+        <item name="colorSecondaryVariant">@color/teal_200</item>
+        <item name="colorOnSecondary">@color/black</item>
+        <!-- Status bar color. -->
+        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
+        <!-- Customize your theme here. -->
+    </style>
+</resources>
+
+================================================================================
+FILE: app\src\main\res\values\colors.xml
+================================================================================
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>
+
+================================================================================
+FILE: app\src\main\res\values\strings.xml
+================================================================================
+
+<resources>
+    <string name="app_name">Transformer Monitoring System</string>
+    <string name="title_activity_main">MainActivity</string>
+</resources>
+
+================================================================================
+FILE: app\src\main\res\values\themes.xml
+================================================================================
+
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.TransformerMonitoringSystem" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+        <!-- Primary brand color. -->
+        <item name="colorPrimary">@color/purple_500</item>
+        <item name="colorPrimaryVariant">@color/purple_700</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <!-- Secondary brand color. -->
+        <item name="colorSecondary">@color/teal_200</item>
+        <item name="colorSecondaryVariant">@color/teal_700</item>
+        <item name="colorOnSecondary">@color/black</item>
+        <!-- Status bar color. -->
+        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
+        <!-- Customize your theme here. -->
+    </style>
+</resources>
+
+================================================================================
+FILE: app\src\main\res\xml\backup_rules.xml
+================================================================================
+
+<?xml version="1.0" encoding="utf-8"?><!--
+   Sample backup rules file; uncomment and customize as necessary.
+   See https://developer.android.com/guide/topics/data/autobackup
+   for details.
+   Note: This file is ignored for devices older than API 31
+   See https://developer.android.com/about/versions/12/backup-restore
+-->
+<full-backup-content>
+    <!--
+   <include domain="sharedpref" path="."/>
+   <exclude domain="sharedpref" path="device.xml"/>
+-->
+</full-backup-content>
+
+================================================================================
+FILE: app\src\main\res\xml\data_extraction_rules.xml
+================================================================================
+
+<?xml version="1.0" encoding="utf-8"?><!--
+   Sample data extraction rules file; uncomment and customize as necessary.
+   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
+   for details.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- TODO: Use <include> and <exclude> to control what is backed up.
+        <include .../>
+        <exclude .../>
+        -->
+    </cloud-backup>
+    <!--
+    <device-transfer>
+        <include .../>
+        <exclude .../>
+    </device-transfer>
+    -->
+</data-extraction-rules>
+
+================================================================================
+FILE: build.gradle.kts
+================================================================================
+
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+plugins {
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.kotlin.compose) apply false
+    alias(libs.plugins.ksp) apply false
+    alias(libs.plugins.kotlin.jvm) apply false
+    alias(libs.plugins.kotlin.spring) apply false
+    alias(libs.plugins.kotlin.jpa) apply false
+    alias(libs.plugins.spring.boot) apply false
+    alias(libs.plugins.hilt) apply false
+}
+
+================================================================================
+FILE: gradle\libs.versions.toml
+================================================================================
+
+[versions]
+agp = "9.4.1"
+coreKtx = "1.19.1"
+junit = "4.13.2"
+junitVersion = "1.3.0"
+espressoCore = "3.7.0"
+appcompat = "1.8.0"
+material = "1.14.0"
+lifecycleRuntimeKtx = "2.11.0"
+activityCompose = "1.13.0"
+kotlin = "2.2.10"
+ksp = "2.2.10-2.0.2"
+composeBom = "2026.09.00"
+navigationCompose = "2.10.2"
+lifecycleViewmodelCompose = "2.11.0"
+room = "2.8.5"
+retrofit = "2.11.0"
+okhttp = "4.12.0"
+gson = "2.11.0"
+datastore = "1.1.3"
+springBoot = "3.4.3"
+jjwt = "0.12.6"
+hilt = "2.60.1"
+hiltNavigationCompose = "1.2.0"
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
+androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
+androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycleViewmodelCompose" }
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
+retrofit-converter-gson = { group = "com.squareup.retrofit2", name = "converter-gson", version.ref = "retrofit" }
+okhttp-logging-interceptor = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
+gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
+spring-boot-starter-web = { group = "org.springframework.boot", name = "spring-boot-starter-web" }
+spring-boot-starter-test = { group = "org.springframework.boot", name = "spring-boot-starter-test" }
+jackson-module-kotlin = { group = "com.fasterxml.jackson.module", name = "jackson-module-kotlin" }
+spring-boot-starter-data-jpa = { group = "org.springframework.boot", name = "spring-boot-starter-data-jpa" }
+postgresql = { group = "org.postgresql", name = "postgresql" }
+spring-boot-dependencies = { group = "org.springframework.boot", name = "spring-boot-dependencies", version.ref = "springBoot" }
+spring-boot-starter-security = { group = "org.springframework.boot", name = "spring-boot-starter-security" }
+spring-boot-starter-validation = { group = "org.springframework.boot", name = "spring-boot-starter-validation" }
+spring-security-test = { group = "org.springframework.security", name = "spring-security-test" }
+jjwt-api = { group = "io.jsonwebtoken", name = "jjwt-api", version.ref = "jjwt" }
+jjwt-impl = { group = "io.jsonwebtoken", name = "jjwt-impl", version.ref = "jjwt" }
+jjwt-jackson = { group = "io.jsonwebtoken", name = "jjwt-jackson", version.ref = "jjwt" }
+hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
+hilt-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
+androidx-hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-spring = { id = "org.jetbrains.kotlin.plugin.spring", version.ref = "kotlin" }
+kotlin-jpa = { id = "org.jetbrains.kotlin.plugin.jpa", version.ref = "kotlin" }
+spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
+hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+
+
+
+
+================================================================================
+FILE: settings.gradle.kts
+================================================================================
+
+pluginManagement {
+    repositories {
+        google {
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google.*")
+                includeGroupByRegex("androidx.*")
+            }
+        }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "Transformer Monitoring System"
+include(":app")
+include(":shared")
+include(":server")
+include(":libs:core")
+include(":libs:database")
+include(":libs:user")
+include(":libs:auth")
+
+
+================================================================================
+FILE: shared\build.gradle.kts
+================================================================================
+
+plugins {
+    alias(libs.plugins.kotlin.jvm)
+}
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(17))
+    }
+}
+
+
+================================================================================
+FILE: shared\src\main\kotlin\ua\kpi\transformermonitoringsystem\shared\ITransformerMonitorService.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.shared
+
+/**
+ * Загальний контракт для моніторингу трансформаторів.
+ * Модуль :shared містить виключно абстракції/інтерфейси без прив'язки до серверних DTO.
+ */
+interface ITransformerMonitorService {
+    fun getHealthStatus(): String
+}
+
+
+================================================================================
+FILE: shared\src\main\kotlin\ua\kpi\transformermonitoringsystem\shared\auth\AuthCredentials.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.shared.auth
+
+interface AuthCredentials {
+    val login: String
+    val password: String
+}
+
+
+================================================================================
+FILE: shared\src\main\kotlin\ua\kpi\transformermonitoringsystem\shared\auth\AuthResponse.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.shared.auth
+
+interface AuthResponse {
+    val accessToken: String
+    val refreshToken: String
+}
+
+
+================================================================================
+FILE: shared\src\main\kotlin\ua\kpi\transformermonitoringsystem\shared\auth\AuthUser.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.shared.auth
+
+interface AuthUser {
+    val sub: String
+}
+
+
+================================================================================
+FILE: shared\src\main\kotlin\ua\kpi\transformermonitoringsystem\shared\auth\ChangeRoleToAdminRequest.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.shared.auth
+
+interface ChangeRoleToAdminRequest {
+    val key: String
+}
+
+
+================================================================================
+FILE: shared\src\main\kotlin\ua\kpi\transformermonitoringsystem\shared\auth\LogoutRequest.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.shared.auth
+
+interface LogoutRequest {
+    val refreshToken: String?
+}
+
+
+================================================================================
+FILE: shared\src\main\kotlin\ua\kpi\transformermonitoringsystem\shared\auth\RefreshRequest.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.shared.auth
+
+interface RefreshRequest {
+    val refreshToken: String?
+}
+
+
+================================================================================
+FILE: shared\src\main\kotlin\ua\kpi\transformermonitoringsystem\shared\auth\RefreshUser.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.shared.auth
+
+interface RefreshUser {
+    val sub: String
+    val refreshToken: String?
+}
+
+
+================================================================================
+FILE: shared\src\main\kotlin\ua\kpi\transformermonitoringsystem\shared\auth\Role.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.shared.auth
+
+enum class Role {
+    USER,
+    ADMIN
+}
+
+
+================================================================================
+FILE: shared\src\main\kotlin\ua\kpi\transformermonitoringsystem\shared\core\ITransformer.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.shared.core
+
+interface ITransformer {
+    val id: Int
+    val name: String
+    val location: String
+    val currentLoad: Double
+    val temperature: Double
+    val maxLoad: Double
+}
+
+interface ITransformerStatus {
+    val id: Int
+    val transformerId: Int
+    val voltage: Double
+    val temperature: Double
+    val load: Double
+}
+
+interface ITransformerStats {
+    val totalPower: Double
+    val criticalIssues: Int
+    val averageLoad: Double
+    val averageTemperature: Double
+    val totalCount: Int
+}
+
+
+================================================================================
+FILE: shared\src\main\kotlin\ua\kpi\transformermonitoringsystem\shared\user\UpdateUser.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.shared.user
+
+interface UpdateUser {
+    val currentPassword: String?
+    val login: String?
+    val password: String?
+}
+
+
+================================================================================
+FILE: shared\src\main\kotlin\ua\kpi\transformermonitoringsystem\shared\user\UserProfile.kt
+================================================================================
+
+package ua.kpi.transformermonitoringsystem.shared.user
+
+import java.time.Instant
+import ua.kpi.transformermonitoringsystem.shared.auth.Role
+
+interface UserProfile {
+    val id: String
+    val login: String
+    val role: Role
+    val createdAt: Instant
+}
+
+

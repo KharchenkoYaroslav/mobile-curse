@@ -1,9 +1,11 @@
 package ua.kpi.transformermonitoringsystem.data
 
+import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import ua.kpi.transformermonitoringsystem.data.model.AuthCredentials
 import ua.kpi.transformermonitoringsystem.data.model.AuthResponse
 import ua.kpi.transformermonitoringsystem.data.model.ChangeRoleToAdminRequest
@@ -20,25 +22,25 @@ import ua.kpi.transformermonitoringsystem.util.toDto
 import ua.kpi.transformermonitoringsystem.util.toEntity
 
 interface TransformerRepository {
-    //  Session & Auth State (AuthDataStore) 
+    //  Session & Auth State (AuthDataStore)
     val accessTokenFlow: Flow<String?>
     val refreshTokenFlow: Flow<String?>
     val roleFlow: Flow<String>
     val loginFlow: Flow<String?>
 
-    //  Auth (AuthApiService + AuthDataStore) 
+    //  Auth (AuthApiService + AuthDataStore)
     suspend fun register(credentials: AuthCredentials): Result<AuthResponse>
     suspend fun login(credentials: AuthCredentials): Result<AuthResponse>
     suspend fun logout(): Result<Unit>
     suspend fun changeRoleToAdmin(secretKey: String): Result<Unit>
     suspend fun changeRoleToUser(): Result<Unit>
 
-    //  User Profile (UserApiService + AuthDataStore) 
+    //  User Profile (UserApiService + AuthDataStore)
     suspend fun getCurrentUserProfile(): Result<UserProfile>
     suspend fun updateProfile(dto: UpdateUser): Result<UserProfile>
     suspend fun deleteProfile(): Result<UserProfile>
 
-    //  Transformers (TransformerApiService + Room) 
+    //  Transformers (TransformerApiService + Room)
     suspend fun getAllTransformers(
         forceRefresh: Boolean = false,
         localOnly: Boolean = false
@@ -89,6 +91,22 @@ class TransformerRepositoryImpl(
     private suspend fun isAuthenticated(): Boolean =
         !authDataStore.accessTokenFlow.firstOrNull().isNullOrBlank()
 
+    private fun extractRoleFromJwt(token: String): String {
+        return try {
+            val parts = token.split(".")
+            if (parts.size < 2) return "USER"
+            val payloadBytes = Base64.decode(
+                parts[1],
+                Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP
+            )
+            val json = JSONObject(String(payloadBytes, Charsets.UTF_8))
+            val rawRole = json.optString("role", "").uppercase().removePrefix("ROLE_")
+            if (rawRole == "ADMIN" || rawRole == "USER") rawRole else "USER"
+        } catch (_: Exception) {
+            "USER"
+        }
+    }
+
     private suspend inline fun <T> safeCall(
         crossinline block: suspend () -> T
     ): Result<T> = withContext(Dispatchers.IO) {
@@ -106,7 +124,7 @@ class TransformerRepositoryImpl(
         authDataStore.saveAuthData(
             accessToken = response.accessToken,
             refreshToken = response.refreshToken,
-            role = "USER",
+            role = extractRoleFromJwt(response.accessToken),
             login = credentials.login
         )
         response
@@ -117,7 +135,7 @@ class TransformerRepositoryImpl(
         authDataStore.saveAuthData(
             accessToken = response.accessToken,
             refreshToken = response.refreshToken,
-            role = "USER",
+            role = extractRoleFromJwt(response.accessToken),
             login = credentials.login
         )
         response

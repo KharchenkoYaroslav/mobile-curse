@@ -17,6 +17,7 @@ import ua.kpi.transformermonitoringsystem.data.model.AuthCredentials
 import ua.kpi.transformermonitoringsystem.data.model.UpdateUser
 import ua.kpi.transformermonitoringsystem.data.model.UserProfile
 import ua.kpi.transformermonitoringsystem.network.ErrorHandler
+import java.net.UnknownHostException
 import javax.inject.Inject
 
 sealed interface AuthUiState {
@@ -72,6 +73,10 @@ class AccountViewModel @Inject constructor(
             _errorMessage.value = "Логін та пароль не можуть бути порожніми"
             return
         }
+        if (!ErrorHandler.isInternetAvailable(appContext)) {
+            _errorMessage.value = ErrorHandler.handleException(appContext, UnknownHostException())
+            return
+        }
 
         viewModelScope.launch {
             _isLoading.value = true
@@ -97,6 +102,10 @@ class AccountViewModel @Inject constructor(
             _errorMessage.value = "Пароль повинен містити щонайменше 6 символів"
             return
         }
+        if (!ErrorHandler.isInternetAvailable(appContext)) {
+            _errorMessage.value = ErrorHandler.handleException(appContext, UnknownHostException())
+            return
+        }
 
         viewModelScope.launch {
             _isLoading.value = true
@@ -113,6 +122,7 @@ class AccountViewModel @Inject constructor(
     }
 
     fun loadUserProfile() {
+        if (!ErrorHandler.isInternetAvailable(appContext)) return
         viewModelScope.launch {
             repository.getCurrentUserProfile()
                 .onSuccess { profile ->
@@ -142,6 +152,10 @@ class AccountViewModel @Inject constructor(
             _errorMessage.value = "Новий пароль повинен містити щонайменше 6 символів"
             return
         }
+        if (!ErrorHandler.isInternetAvailable(appContext)) {
+            _errorMessage.value = ErrorHandler.handleException(appContext, UnknownHostException())
+            return
+        }
 
         viewModelScope.launch {
             _isLoading.value = true
@@ -167,6 +181,10 @@ class AccountViewModel @Inject constructor(
             _errorMessage.value = "Введіть секретний ключ адміністратора"
             return
         }
+        if (!ErrorHandler.isInternetAvailable(appContext)) {
+            _errorMessage.value = ErrorHandler.handleException(appContext, UnknownHostException())
+            return
+        }
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
@@ -183,6 +201,10 @@ class AccountViewModel @Inject constructor(
     }
 
     fun changeRoleToUser(onSuccess: () -> Unit = {}) {
+        if (!ErrorHandler.isInternetAvailable(appContext)) {
+            _errorMessage.value = ErrorHandler.handleException(appContext, UnknownHostException())
+            return
+        }
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
@@ -209,6 +231,10 @@ class AccountViewModel @Inject constructor(
     }
 
     fun deleteAccount() {
+        if (!ErrorHandler.isInternetAvailable(appContext)) {
+            _errorMessage.value = ErrorHandler.handleException(appContext, UnknownHostException())
+            return
+        }
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
