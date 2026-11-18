@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ua.kpi.transformermonitoringsystem.auth.service.AuthServiceTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-11-12T12:28:49.946Z" hostname="VICTUS" time="6.767">
+  <properties/>
+  <testcase name="register throws BadRequestException if login exists()" classname="ua.kpi.transformermonitoringsystem.auth.service.AuthServiceTest" time="2.994"/>
+  <testcase name="refreshTokens throws ForbiddenException on unknown refresh token()" classname="ua.kpi.transformermonitoringsystem.auth.service.AuthServiceTest" time="0.015"/>
+  <testcase name="login returns tokens on correct credentials()" classname="ua.kpi.transformermonitoringsystem.auth.service.AuthServiceTest" time="1.258"/>
+  <testcase name="login throws BadRequestException on invalid password()" classname="ua.kpi.transformermonitoringsystem.auth.service.AuthServiceTest" time="0.269"/>
+  <testcase name="addRefreshToken keeps at most 5 refresh tokens()" classname="ua.kpi.transformermonitoringsystem.auth.service.AuthServiceTest" time="0.967"/>
+  <testcase name="logout removes matching refresh token()" classname="ua.kpi.transformermonitoringsystem.auth.service.AuthServiceTest" time="0.284"/>
+  <testcase name="register creates user and returns tokens()" classname="ua.kpi.transformermonitoringsystem.auth.service.AuthServiceTest" time="0.309"/>
+  <testcase name="refreshTokens rotates token when valid token provided()" classname="ua.kpi.transformermonitoringsystem.auth.service.AuthServiceTest" time="0.417"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

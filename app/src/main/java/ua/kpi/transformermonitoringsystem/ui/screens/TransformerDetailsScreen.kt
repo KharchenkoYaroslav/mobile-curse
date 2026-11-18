@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
@@ -12,13 +14,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import ua.kpi.transformermonitoringsystem.ui.AccountViewModel
 import ua.kpi.transformermonitoringsystem.ui.TransformerViewModel
 import java.util.Locale
 
-// Екран відображення детальної інформації про трансформатор та його історію статусів
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TransformerDetailsScreen(transformerId: Int, navController: NavHostController, viewModel: TransformerViewModel) {
-    // Зчитування реактивних станів із ViewModel
+fun TransformerDetailsScreen(
+    transformerId: Int,
+    navController: NavHostController,
+    viewModel: TransformerViewModel,
+    accountViewModel: AccountViewModel
+) {
     val statuses by viewModel.statuses.collectAsState()
     val avgTemp by viewModel.avgTemperature.collectAsState()
     val avgLoad by viewModel.avgLoad.collectAsState()
@@ -26,19 +33,17 @@ fun TransformerDetailsScreen(transformerId: Int, navController: NavHostControlle
     val isLoading by viewModel.isLoading.collectAsState()
     val isSubmitted by viewModel.isSubmitted.collectAsState()
     val selectedTransformer by viewModel.selectedTransformer.collectAsState()
+    val userRole by accountViewModel.userRole.collectAsState()
 
-    // Ініціалізація даних при відкритті екрану
     LaunchedEffect(transformerId) {
         viewModel.selectTransformer(transformerId)
     }
 
-    // Локальні стани для керування діалогами
     var showAddDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isMenuExpanded by remember { mutableStateOf(false) }
 
-    // Обробка успішного завершення операцій
     LaunchedEffect(isSubmitted) {
         if (isSubmitted) {
             if (showDeleteDialog) {
@@ -55,104 +60,138 @@ fun TransformerDetailsScreen(transformerId: Int, navController: NavHostControlle
         }
     }
 
-    Column(modifier = Modifier
-        .fillMaxSize()
-        .systemBarsPadding()
-        .padding(16.dp)) {
-        
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+    Scaffold(
+        topBar = {
+            Column {
+                TopAppBar(
+                    title = { Text(selectedTransformer?.name ?: "Деталі трансформатора") },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                        }
+                    },
+                    actions = {
+                        if (userRole == "ADMIN") {
+                            IconButton(onClick = { showAddDialog = true }) {
+                                Icon(Icons.Default.Add, contentDescription = "Додати статус")
+                            }
+                            Box {
+                                IconButton(onClick = { isMenuExpanded = true }) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "Меню")
+                                }
+                                DropdownMenu(
+                                    expanded = isMenuExpanded,
+                                    onDismissRequest = { isMenuExpanded = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Редагувати") },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            showEditDialog = true
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Видалити", color = MaterialTheme.colorScheme.error) },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            showDeleteDialog = true
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        actionIconContentColor = MaterialTheme.colorScheme.onSurface,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                    thickness = 1.dp
+                )
+            }
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .padding(16.dp)
         ) {
-            Text(selectedTransformer?.name ?: "Деталі", style = MaterialTheme.typography.titleLarge)
-            Row {
-                Button(onClick = { showAddDialog = true }) {
-                    Text("+ Статус")
-                }
-                Box {
-                    IconButton(onClick = { isMenuExpanded = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "Меню")
-                    }
-                    // Випадаюче меню для редагування та видалення
-                    DropdownMenu(
-                        expanded = isMenuExpanded,
-                        onDismissRequest = { isMenuExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Редагувати") },
-                            onClick = {
-                                isMenuExpanded = false
-                                showEditDialog = true
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Видалити", color = MaterialTheme.colorScheme.error) },
-                            onClick = {
-                                isMenuExpanded = false
-                                showDeleteDialog = true
-                            }
-                        )
+            selectedTransformer?.let { transformer ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Характеристики вузла", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Локація: ${transformer.location}")
+                        Text("Поточна температура: ${transformer.temperature} °C")
+                        Text("Навантаження: ${transformer.currentLoad} / ${transformer.maxLoad} %")
                     }
                 }
             }
-        }
-        Spacer(modifier = Modifier.height(16.dp))
 
-        // Відображення локації
-        if (selectedTransformer != null) {
-            Text("Локація: ${selectedTransformer!!.location}", style = MaterialTheme.typography.bodyLarge)
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-        
-        // Відображення помилок
-        if (errorMessage != null) {
-            Text(text = "Помилка: $errorMessage", color = MaterialTheme.colorScheme.error)
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
-        // Карточка з агрегованими показниками (середня температура та навантаження)
-        Card(modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 16.dp)) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Агреговані показники", style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Середня температура: ${String.format(Locale.US, "%.1f", avgTemp)} °C")
-                Text("Середнє навантаження: ${String.format(Locale.US, "%.1f", avgLoad)} %")
+            if (errorMessage != null) {
+                Text(text = "Помилка: $errorMessage", color = MaterialTheme.colorScheme.error)
+                Spacer(modifier = Modifier.height(12.dp))
             }
-        }
-        
-        Text("Історія статусів:", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
 
-        // Історія статусів з індикатором завантаження
-        if (isLoading && statuses.isEmpty()) {
-            CircularProgressIndicator()
-        } else if (statuses.isEmpty()) {
-            Text("Немає статусів", style = MaterialTheme.typography.bodyLarge)
-        } else {
-            LazyColumn {
-                items(statuses) { status ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Row(
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Агреговані показники телеметрії", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Середня температура: ${String.format(Locale.US, "%.1f", avgTemp)} °C")
+                    Text("Середнє навантаження: ${String.format(Locale.US, "%.1f", avgLoad)} %")
+                }
+            }
+
+            Text("Історія показників телеметрії", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (isLoading && statuses.isEmpty()) {
+                CircularProgressIndicator()
+            } else if (statuses.isEmpty()) {
+                Text("Немає збережених показників", style = MaterialTheme.typography.bodyLarge)
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(statuses, key = { it.id }) { status ->
+                        Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(vertical = 4.dp)
                         ) {
-                            Column {
-                                Text("Напруга: ${status.voltage} В")
-                                Text("Температура: ${status.temperature} °C")
-                                Text("Навантаження: ${status.load} %")
-                            }
-                            IconButton(onClick = { viewModel.deleteStatus(status) }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Видалити статус", tint = MaterialTheme.colorScheme.error)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text("Напруга: ${status.voltage} В")
+                                    Text("Температура: ${status.temperature} °C")
+                                    Text("Навантаження: ${status.load} %")
+                                }
+                                if (userRole == "ADMIN") {
+                                    IconButton(onClick = { viewModel.deleteStatus(status) }) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = "Видалити статус",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -161,28 +200,24 @@ fun TransformerDetailsScreen(transformerId: Int, navController: NavHostControlle
         }
     }
 
-    // Діалог додавання нового статусу
-    if (showAddDialog) {
+    if (showAddDialog && userRole == "ADMIN") {
         var voltage by remember { mutableStateOf("") }
         var temp by remember { mutableStateOf("") }
         var load by remember { mutableStateOf("") }
 
         AlertDialog(
-            onDismissRequest = { 
+            onDismissRequest = {
                 showAddDialog = false
-                viewModel.clearError() 
+                viewModel.clearError()
             },
-            title = { Text("Новий статус") },
+            title = { Text("Новий показник телеметрії") },
             text = {
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (errorMessage != null) {
                         Text(text = errorMessage!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                        Spacer(modifier = Modifier.height(8.dp))
                     }
                     OutlinedTextField(value = voltage, onValueChange = { voltage = it }, label = { Text("Напруга (В)") })
-                    Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(value = temp, onValueChange = { temp = it }, label = { Text("Температура (°C)") })
-                    Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(value = load, onValueChange = { load = it }, label = { Text("Навантаження (%)") })
                 }
             },
@@ -195,9 +230,9 @@ fun TransformerDetailsScreen(transformerId: Int, navController: NavHostControlle
                 }
             },
             dismissButton = {
-                TextButton(onClick = { 
+                TextButton(onClick = {
                     showAddDialog = false
-                    viewModel.clearError() 
+                    viewModel.clearError()
                 }) {
                     Text("Скасувати")
                 }
@@ -205,37 +240,37 @@ fun TransformerDetailsScreen(transformerId: Int, navController: NavHostControlle
         )
     }
 
-    // Діалог редагування інформації
-    if (showEditDialog && selectedTransformer != null) {
-        var editName by remember { mutableStateOf(selectedTransformer!!.name) }
-        var editLocation by remember { mutableStateOf(selectedTransformer!!.location) }
+    if (showEditDialog && selectedTransformer != null && userRole == "ADMIN") {
+        val currentTransformer = selectedTransformer!!
+        var editName by remember(currentTransformer) { mutableStateOf(currentTransformer.name) }
+        var editLocation by remember(currentTransformer) { mutableStateOf(currentTransformer.location) }
+        var editMaxLoad by remember(currentTransformer) { mutableStateOf(currentTransformer.maxLoad.toString()) }
 
         AlertDialog(
-            onDismissRequest = { 
+            onDismissRequest = {
                 showEditDialog = false
                 viewModel.clearError()
             },
             title = { Text("Редагувати трансформатор") },
             text = {
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (errorMessage != null) {
                         Text(text = errorMessage!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                        Spacer(modifier = Modifier.height(8.dp))
                     }
                     OutlinedTextField(value = editName, onValueChange = { editName = it }, label = { Text("Назва") })
-                    Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(value = editLocation, onValueChange = { editLocation = it }, label = { Text("Локація") })
+                    OutlinedTextField(value = editMaxLoad, onValueChange = { editMaxLoad = it }, label = { Text("Макс. навантаження (%)") })
                 }
             },
             confirmButton = {
                 Button(onClick = {
-                    viewModel.updateSelectedTransformer(editName, editLocation)
+                    viewModel.updateSelectedTransformer(editName, editLocation, editMaxLoad)
                 }) {
                     Text("Зберегти")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { 
+                TextButton(onClick = {
                     showEditDialog = false
                     viewModel.clearError()
                 }) {
@@ -245,8 +280,7 @@ fun TransformerDetailsScreen(transformerId: Int, navController: NavHostControlle
         )
     }
 
-    // Діалог підтвердження видалення
-    if (showDeleteDialog) {
+    if (showDeleteDialog && userRole == "ADMIN") {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("Видалити трансформатор?") },

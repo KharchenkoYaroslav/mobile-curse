@@ -24,3 +24,9 @@ dependencyResolutionManagement {
 
 rootProject.name = "Transformer Monitoring System"
 include(":app")
+include(":shared")
+include(":server")
+include(":libs:core")
+include(":libs:database")
+include(":libs:user")
+include(":libs:auth")

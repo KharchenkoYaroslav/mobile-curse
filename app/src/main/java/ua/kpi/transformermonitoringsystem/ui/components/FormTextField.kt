@@ -9,7 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-// Перевикористовуваний компонент поля вводу з підтримкою валідації та підказок
+// Пере-використовуваний компонент поля вводу з підтримкою валідації та підказок
 @Composable
 fun FormTextField(
     label: String,

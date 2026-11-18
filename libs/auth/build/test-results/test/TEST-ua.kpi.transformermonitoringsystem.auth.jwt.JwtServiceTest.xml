@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ua.kpi.transformermonitoringsystem.auth.jwt.JwtServiceTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-11-12T12:28:56.720Z" hostname="VICTUS" time="0.122">
+  <properties/>
+  <testcase name="generateTokens generates valid access and refresh tokens()" classname="ua.kpi.transformermonitoringsystem.auth.jwt.JwtServiceTest" time="0.109"/>
+  <testcase name="validateRefreshToken throws ForbiddenException on invalid token()" classname="ua.kpi.transformermonitoringsystem.auth.jwt.JwtServiceTest" time="0.006"/>
+  <testcase name="validateAccessToken throws UnauthorizedException on invalid token()" classname="ua.kpi.transformermonitoringsystem.auth.jwt.JwtServiceTest" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -10,6 +10,13 @@
           <set>
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/app" />
+            <option value="$PROJECT_DIR$/libs" />
+            <option value="$PROJECT_DIR$/libs/auth" />
+            <option value="$PROJECT_DIR$/libs/core" />
+            <option value="$PROJECT_DIR$/libs/database" />
+            <option value="$PROJECT_DIR$/libs/user" />
+            <option value="$PROJECT_DIR$/server" />
+            <option value="$PROJECT_DIR$/shared" />
           </set>
         </option>
       </GradleProjectSettings>

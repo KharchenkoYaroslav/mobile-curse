@@ -1,98 +1,151 @@
 package ua.kpi.transformermonitoringsystem.ui
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import ua.kpi.transformermonitoringsystem.data.local.Transformer
-import ua.kpi.transformermonitoringsystem.data.local.TransformerStatus
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
 import ua.kpi.transformermonitoringsystem.data.TransformerRepository
+import ua.kpi.transformermonitoringsystem.data.NetworkStats
+import ua.kpi.transformermonitoringsystem.database.entity.Transformer
+import ua.kpi.transformermonitoringsystem.database.entity.TransformerStatus
+import ua.kpi.transformermonitoringsystem.network.ErrorHandler
 
-// ViewModel для управління станом UI та взаємодії з бізнес-логікою (MVVM)
-class TransformerViewModel(private val repository: TransformerRepository) : ViewModel() {
+/**
+ * ViewModel для керування станом моніторингу трансформаторів.
+ */
+@HiltViewModel
+class TransformerViewModel @Inject constructor(
+    private val repository: TransformerRepository,
+    @ApplicationContext context: Context,
+) : ViewModel() {
 
-    // Локальний список для пошуку та фільтрації без повторних запитів до БД
-    private var allTransformers = emptyList<Transformer>()
+    private val appContext = context.applicationContext
 
-    // StateFlow для реактивного відображення списку в UI
+    // Список трансформаторів після сортування та фільтрації
     private val _transformers = MutableStateFlow<List<Transformer>>(emptyList())
     val transformers: StateFlow<List<Transformer>> = _transformers.asStateFlow()
 
-    // Стан пошукового запиту
+    // Агрегована статистика мережі
+    private val _stats = MutableStateFlow<NetworkStats?>(null)
+    val stats: StateFlow<NetworkStats?> = _stats.asStateFlow()
+
+    // Стан помилки для інформування користувача в UI
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    // Стан завантаження (прогрес-бар)
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    // Стан успішного виконання форми або дії
+    private val _isSubmitted = MutableStateFlow(false)
+    val isSubmitted: StateFlow<Boolean> = _isSubmitted.asStateFlow()
+
+    // Пошуковий запит
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    // Стан напрямку сортування (true = А-Я, false = Я-А)
+    // Порядок сортування (за зростанням чи спаданням)
     private val _isAscending = MutableStateFlow(true)
     val isAscending: StateFlow<Boolean> = _isAscending.asStateFlow()
 
-    // ID обраного трансформатора
+    // Обраний трансформатор та його ідентифікатор
     private val _selectedTransformerId = MutableStateFlow<Int?>(null)
-
-    // Об'єкт обраного трансформатора для детального перегляду
     private val _selectedTransformer = MutableStateFlow<Transformer?>(null)
     val selectedTransformer: StateFlow<Transformer?> = _selectedTransformer.asStateFlow()
 
-    // StateFlow для списку статусів обраного трансформатора
+    // Історія статусів обраного трансформатора
     private val _statuses = MutableStateFlow<List<TransformerStatus>>(emptyList())
     val statuses: StateFlow<List<TransformerStatus>> = _statuses.asStateFlow()
 
-    // Агреговані показники (з БД)
+    // Середня температура та навантаження
     private val _avgTemperature = MutableStateFlow(0.0)
     val avgTemperature: StateFlow<Double> = _avgTemperature.asStateFlow()
 
     private val _avgLoad = MutableStateFlow(0.0)
     val avgLoad: StateFlow<Double> = _avgLoad.asStateFlow()
 
-    // Стан завантаження (індикатор прогресу)
-    private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-    
-    // Стан успішного виконання операції (додавання/видалення)
-    private val _isSubmitted = MutableStateFlow(false)
-    val isSubmitted: StateFlow<Boolean> = _isSubmitted.asStateFlow()
+    private var allTransformerEntities = emptyList<Transformer>()
 
-    // Повідомлення про помилки
-    private val _errorMessage = MutableStateFlow<String?>(null)
-    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+    private var loadDataJob: Job? = null
+    private var selectTransformerJob: Job? = null
+    private var loadStatusesJob: Job? = null
 
-    // Завантаження даних у фоновому потоці через viewModelScope
-    fun loadTransformers(forceRefresh: Boolean = false) {
-        viewModelScope.launch {
-            _isLoading.value = true
-            _errorMessage.value = null
-            try {
-                // Отримуємо дані через Repository
-                allTransformers = repository.getAllTransformers(forceRefresh)
+    fun loadData(forceRefresh: Boolean = false) {
+        loadDataJob?.cancel()
+        loadDataJob = viewModelScope.launch {
+            val localData = if (!forceRefresh) {
+                repository.getAllTransformers(localOnly = true).getOrDefault(emptyList())
+            } else {
+                emptyList()
+            }
+
+            if (localData.isNotEmpty()) {
+                allTransformerEntities = localData
                 applyFilters()
-            } catch (e: Exception) {
-                _errorMessage.value = e.message
-            } finally {
+                _stats.value = repository.getNetworkStats(localData, localOnly = true).getOrNull()
+                _isLoading.value = false
+
+                launch {
+                    val result = repository.getAllTransformers(forceRefresh = true)
+                    result.onSuccess { freshData ->
+                        allTransformerEntities = freshData
+                        applyFilters()
+                        _stats.value = repository.getNetworkStats(freshData).getOrNull()
+                    }
+                }
+            } else {
+                _isLoading.value = true
+                val result = repository.getAllTransformers(forceRefresh = true)
+                result.onSuccess { data ->
+                    allTransformerEntities = data
+                    applyFilters()
+                    _stats.value = repository.getNetworkStats(data).getOrNull()
+                }.onFailure { error ->
+                    val fallbackData = repository.getAllTransformers(localOnly = true).getOrDefault(emptyList())
+                    if (fallbackData.isNotEmpty()) {
+                        allTransformerEntities = fallbackData
+                        applyFilters()
+                        _stats.value = repository.getNetworkStats(fallbackData, localOnly = true).getOrNull()
+                    } else {
+                        _errorMessage.value = ErrorHandler.handleException(appContext, error)
+                    }
+                }
                 _isLoading.value = false
             }
         }
     }
 
-    // Оновлення тексту пошуку
+    /**
+     * Встановлення пошукового рядка та застосування фільтрації.
+     */
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
         applyFilters()
     }
 
-    // Зміна порядку сортування
+    /**
+     * Перемикання напрямку сортування за назвою.
+     */
     fun toggleSortOrder() {
         _isAscending.value = !_isAscending.value
         applyFilters()
     }
 
-    // Локальна фільтрація та сортування
+    /**
+     * Фільтрація та сортування у пам'яті.
+     */
     private fun applyFilters() {
-        var filtered = allTransformers.filter {
-            it.name.contains(_searchQuery.value, ignoreCase = true) || 
-            it.location.contains(_searchQuery.value, ignoreCase = true)
+        var filtered = allTransformerEntities.filter {
+            it.name.contains(_searchQuery.value, ignoreCase = true) ||
+                    it.location.contains(_searchQuery.value, ignoreCase = true)
         }
         filtered = if (_isAscending.value) {
             filtered.sortedBy { it.name }
@@ -102,63 +155,132 @@ class TransformerViewModel(private val repository: TransformerRepository) : View
         _transformers.value = filtered
     }
 
-    // Вибір трансформатора та завантаження його деталей
+    /**
+     * Вибір трансформатора за ID та завантаження його телеметрії.
+     */
     fun selectTransformer(id: Int) {
+        _errorMessage.value = null
         _selectedTransformerId.value = id
-        _selectedTransformer.value = allTransformers.find { it.id == id }
+        _selectedTransformer.value = allTransformerEntities.find { it.id == id }
+
+        selectTransformerJob?.cancel()
+        selectTransformerJob = viewModelScope.launch {
+            if (_selectedTransformer.value == null) {
+                repository.getTransformerById(id, localOnly = true).onSuccess { cached ->
+                    _selectedTransformer.value = cached
+                }
+            }
+
+            repository.getTransformerById(id)
+                .onSuccess { fresh ->
+                    _selectedTransformer.value = fresh
+                }
+                .onFailure { e ->
+                    if (_selectedTransformer.value == null) {
+                        _errorMessage.value = ErrorHandler.handleException(appContext, e)
+                    }
+                }
+        }
         loadStatuses(id)
     }
 
-    // Завантаження статусів та агрегованих показників
+    /**
+     * Завантаження історії статусів та SQL-агрегованих показників.
+     */
     fun loadStatuses(transformerId: Int) {
-        viewModelScope.launch {
+        loadStatusesJob?.cancel()
+        loadStatusesJob = viewModelScope.launch {
+            val cachedStatuses = repository.getStatuses(transformerId, localOnly = true).getOrDefault(emptyList())
+            if (cachedStatuses.isNotEmpty()) {
+                _statuses.value = cachedStatuses
+                _avgTemperature.value = repository.getAverageTemperature(transformerId).getOrDefault(0.0)
+                _avgLoad.value = repository.getAverageLoad(transformerId).getOrDefault(0.0)
+            } else {
+                _statuses.value = emptyList()
+                val currentNode = _selectedTransformer.value
+                    ?: repository.getTransformerById(transformerId, localOnly = true).getOrNull()
+                _avgTemperature.value = currentNode?.temperature ?: 0.0
+                _avgLoad.value = currentNode?.currentLoad ?: 0.0
+            }
+
             try {
-                _statuses.value = repository.getStatuses(transformerId)
-                _avgTemperature.value = repository.getAverageTemperature(transformerId)
-                _avgLoad.value = repository.getAverageLoad(transformerId)
+                repository.getStatuses(transformerId)
+                    .onSuccess { freshStatuses ->
+                        _statuses.value = freshStatuses
+                        if (freshStatuses.isNotEmpty()) {
+                            _avgTemperature.value = repository.getAverageTemperature(transformerId).getOrDefault(0.0)
+                            _avgLoad.value = repository.getAverageLoad(transformerId).getOrDefault(0.0)
+                        }
+                    }
+                    .onFailure { e ->
+                        if (cachedStatuses.isEmpty() && _selectedTransformer.value == null) {
+                            _errorMessage.value = ErrorHandler.handleException(appContext, e)
+                        }
+                    }
             } catch (e: Exception) {
-                _errorMessage.value = e.message
+                if (cachedStatuses.isEmpty() && _selectedTransformer.value == null) {
+                    _errorMessage.value = ErrorHandler.handleException(appContext, e)
+                }
             }
         }
     }
 
-    // Збереження нового трансформатора у БД
-    fun addTransformer(name: String, location: String, voltageStr: String, tempStr: String, loadStr: String) {
+    /**
+     * Додавання нового трансформатора з валідацією полів та підтримкою maxLoad.
+     */
+    fun addTransformer(
+        name: String,
+        location: String,
+        voltageStr: String,
+        tempStr: String,
+        loadStr: String,
+        maxLoadStr: String = "100.0"
+    ) {
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             _isSubmitted.value = false
-            
+
             try {
-                // Додаткова перевірка бізнес-логіки
-                if (name.length < 3) throw Exception("Назва має містити мінімум 3 символи")
+                if (name.trim().length < 3) throw Exception("Назва має містити мінімум 3 символи")
                 if (location.isBlank()) throw Exception("Локація не може бути порожньою")
-                
+
                 val v = voltageStr.toDoubleOrNull() ?: throw Exception("Введіть коректну напругу (число)")
                 val t = tempStr.toDoubleOrNull() ?: throw Exception("Введіть коректну температуру (число)")
                 val l = loadStr.toDoubleOrNull() ?: throw Exception("Введіть коректне навантаження (число)")
+                val maxL = maxLoadStr.toDoubleOrNull() ?: throw Exception("Введіть коректне макс. навантаження (число)")
 
-                if (v <= 0) throw Exception("Напруга має бути більшою за 0")
+                if (v <= 0) throw Exception("Напруга має бути більшою за 0 В")
                 if (t !in -50.0..150.0) throw Exception("Температура має бути в межах від -50 до 150 °C")
-                if (l !in 0.0..150.0) throw Exception("Навантаження має бути в межах від 0 до 150 %")
+                if (l < 0.0) throw Exception("Поточне навантаження не може бути від'ємним")
+                if (maxL <= 0.0) throw Exception("Максимальне навантаження має бути більшим за 0")
 
-                val transformer = Transformer(name = name, location = location)
+                val transformer = Transformer(
+                    name = name.trim(),
+                    location = location.trim(),
+                    currentLoad = l,
+                    temperature = t,
+                    maxLoad = maxL
+                )
                 val status = TransformerStatus(voltage = v, temperature = t, load = l, transformerId = 0)
 
-                // Виклик репозиторію
                 repository.insertTransformerWithData(transformer, listOf(status))
-                
-                _isSubmitted.value = true
-                loadTransformers(forceRefresh = true)
+                    .onSuccess {
+                        _isSubmitted.value = true
+                        loadData(forceRefresh = true)
+                    }
+                    .onFailure { throw it }
             } catch (e: Exception) {
-                _errorMessage.value = e.message
+                _errorMessage.value = ErrorHandler.handleException(appContext, e)
             } finally {
                 _isLoading.value = false
             }
         }
     }
-    
-    // Додавання статусу для вже обраного трансформатора
+
+    /**
+     * Додавання нового статусу для обраного трансформатора.
+     */
     fun addStatusForSelectedTransformer(voltageStr: String, tempStr: String, loadStr: String) {
         val transformerId = _selectedTransformerId.value ?: return
         viewModelScope.launch {
@@ -169,61 +291,83 @@ class TransformerViewModel(private val repository: TransformerRepository) : View
                 val t = tempStr.toDoubleOrNull() ?: throw Exception("Введіть коректну температуру (число)")
                 val l = loadStr.toDoubleOrNull() ?: throw Exception("Введіть коректне навантаження (число)")
 
-                if (v <= 0) throw Exception("Напруга має бути більшою за 0")
+                if (v <= 0) throw Exception("Напруга має бути більшою за 0 В")
                 if (t !in -50.0..150.0) throw Exception("Температура має бути в межах від -50 до 150 °C")
-                if (l !in 0.0..150.0) throw Exception("Навантаження має бути в межах від 0 до 150 %")
+                if (l < 0.0) throw Exception("Навантаження не може бути від'ємним")
 
                 val status = TransformerStatus(voltage = v, temperature = t, load = l, transformerId = transformerId)
                 repository.addStatus(status)
-                loadStatuses(transformerId)
-                _isSubmitted.value = true
+                    .onSuccess {
+                        repository.getTransformerById(transformerId).onSuccess { updated ->
+                            _selectedTransformer.value = updated
+                        }
+                        loadStatuses(transformerId)
+                        loadData(forceRefresh = true)
+                        _isSubmitted.value = true
+                    }
+                    .onFailure { throw it }
             } catch (e: Exception) {
-                _errorMessage.value = e.message
+                _errorMessage.value = ErrorHandler.handleException(appContext, e)
             } finally {
                 _isLoading.value = false
             }
         }
     }
 
-    // Видалення конкретного статусу
+    /**
+     * Видалення показника телеметрії.
+     */
     fun deleteStatus(status: TransformerStatus) {
         viewModelScope.launch {
-            try {
-                repository.deleteStatus(status)
-                val id = _selectedTransformerId.value ?: return@launch
-                loadStatuses(id)
-            } catch (e: Exception) {
-                _errorMessage.value = e.message
-            }
+            repository.deleteStatus(status)
+                .onSuccess {
+                    val id = _selectedTransformerId.value ?: return@onSuccess
+                    loadStatuses(id)
+                }
+                .onFailure { e ->
+                    _errorMessage.value = ErrorHandler.handleException(appContext, e)
+                }
         }
     }
 
-    // Оновлення обраного трансформатора
-    fun updateSelectedTransformer(name: String, location: String) {
+    /**
+     * Оновлення обраного трансформатора з підтримкою maxLoad.
+     */
+    fun updateSelectedTransformer(name: String, location: String, maxLoadStr: String) {
         val transformer = _selectedTransformer.value ?: return
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             _isSubmitted.value = false
             try {
-                if (name.length < 3) throw Exception("Назва має містити мінімум 3 символи")
+                if (name.trim().length < 3) throw Exception("Назва має містити мінімум 3 символи")
                 if (location.isBlank()) throw Exception("Локація не може бути порожньою")
+                val maxL = maxLoadStr.toDoubleOrNull() ?: throw Exception("Введіть коректне макс. навантаження")
+                if (maxL <= 0.0) throw Exception("Максимальне навантаження має бути більшим за 0")
 
-                val updatedTransformer = transformer.copy(name = name, location = location)
+                val updatedTransformer = transformer.copy(
+                    name = name.trim(),
+                    location = location.trim(),
+                    maxLoad = maxL
+                )
                 repository.updateTransformer(updatedTransformer)
-                
-                _selectedTransformer.value = updatedTransformer
-                _isSubmitted.value = true
-                loadTransformers(forceRefresh = true)
+                    .onSuccess { saved ->
+                        _selectedTransformer.value = saved
+                        _isSubmitted.value = true
+                        loadData(forceRefresh = true)
+                    }
+                    .onFailure { throw it }
             } catch (e: Exception) {
-                _errorMessage.value = e.message
+                _errorMessage.value = ErrorHandler.handleException(appContext, e)
             } finally {
                 _isLoading.value = false
             }
         }
     }
 
-    // Видалення обраного трансформатора
+    /**
+     * Видалення обраного трансформатора.
+     */
     fun deleteSelectedTransformer() {
         val transformer = _selectedTransformer.value ?: return
         viewModelScope.launch {
@@ -231,34 +375,16 @@ class TransformerViewModel(private val repository: TransformerRepository) : View
             _errorMessage.value = null
             try {
                 repository.deleteTransformer(transformer)
-                loadTransformers(forceRefresh = true)
+                loadData(forceRefresh = true)
                 _isSubmitted.value = true
             } catch (e: Exception) {
-                _errorMessage.value = e.message
+                _errorMessage.value = ErrorHandler.handleException(appContext, e)
             } finally {
                 _isLoading.value = false
             }
         }
     }
 
-    // Скидання стану після успішної навігації
-    fun resetSubmitState() {
-        _isSubmitted.value = false
-    }
-
-    // Очищення повідомлення про помилку
-    fun clearError() {
-        _errorMessage.value = null
-    }
-}
-
-// Фабрика для ін'єкції залежностей у ViewModel
-class TransformerViewModelFactory(private val repository: TransformerRepository) : ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(TransformerViewModel::class.java)) {
-            @Suppress("UNCHECKED_CAST")
-            return TransformerViewModel(repository) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class")
-    }
+    fun resetSubmitState() { _isSubmitted.value = false }
+    fun clearError() { _errorMessage.value = null }
 }
