@@ -5,7 +5,6 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Transaction
 import androidx.room.Update
 import ua.kpi.transformermonitoringsystem.database.entity.Transformer
 import ua.kpi.transformermonitoringsystem.database.entity.TransformerStatus
@@ -15,18 +14,6 @@ import ua.kpi.transformermonitoringsystem.database.entity.TransformerStatus
 interface TransformerDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransformer(transformer: Transformer): Long
-
-    @Query("DELETE FROM transformers")
-    suspend fun clearAll()
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(transformerEntities: List<Transformer>)
-
-    @Transaction
-    suspend fun clearAndInsertAll(transformerEntities: List<Transformer>) {
-        clearAll()
-        insertAll(transformerEntities)
-    }
 
     @Query("SELECT * FROM transformers ORDER BY name ASC")
     suspend fun getAllTransformers(): List<Transformer>
@@ -51,13 +38,4 @@ interface TransformerDao {
 
     @Query("SELECT AVG(load) FROM transformer_status WHERE transformerId = :transformerId")
     suspend fun getAverageLoad(transformerId: Int): Double?
-
-    @Transaction
-    suspend fun insertTransformerWithStatuses(
-        transformer: Transformer,
-        statuses: List<TransformerStatus>
-    ) {
-        val id = insertTransformer(transformer.copy(id = 0)).toInt()
-        statuses.forEach { insertStatus(it.copy(id = 0, transformerId = id)) }
-    }
 }
